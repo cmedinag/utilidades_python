@@ -3258,15 +3258,26 @@ def gdrFindSharedDrive(drive_service, sharedDriveName):
         sharedDriveName -- (str) Nombre de la unidad compartida
     Devuelve (str) con el id de la unidad, o None si no la encuentra
     """
-    shareddrives = drive_service.drives().list().execute()
+    nextPageToken = None
+    shareddrives = []
+    while True:
+        try:
+            respuesta = drive_service.drives().list(pageToken=nextPageToken).execute()
+            shareddrives = shareddrives + respuesta['drives']
+            if 'nextPageToken' in respuesta:
+                nextPageToken = respuesta['nextPageToken']
+                continue
+            else:
+                break
+        except Exception as err:
+            #print(err)
+            break
+    #shareddrives = drive_service.drives().list().execute()
     finished = False
     while not finished:
-        for drive in shareddrives['drives']:
+        for drive in shareddrives:
             if drive['name'] == sharedDriveName:
                 return drive['id']
-        if 'nextPageToken' in shareddrives.keys():
-            break
-        shareddrives = drive_service.drives().list(pageToken = shareddrives['nextPageToken']).execute()
     print('No se ha encontrado la unidad compartida:', sharedDriveName)
     return None
 
@@ -3357,7 +3368,7 @@ def gdrGetFolderId(drive_service, folderPath, sharedDrive = False):
                 q = q + " and 'root' in parents"
         else:
             q = q + " and '" + previo + "' in parents"
-        files = drive_service.files().list(q=q, corpora='domain', supportsAllDrives=True, includeItemsFromAllDrives=True).execute()['files']
+        files = drive_service.files().list(q=q, supportsAllDrives=True, includeItemsFromAllDrives=True).execute()['files']
         #print(q, files)
         if len(files) == 0:
             print('No se ha encontrado la carpeta', folder)
