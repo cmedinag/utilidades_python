@@ -634,9 +634,10 @@ def gshEscribirHoja(sheets_service, dataframe, spreadsheetId, nombreHoja, rango 
                                           range = nombreHoja).execute()
 
     copia = dataframe.copy()
-    for col in copia.columns:
-        if copia[col].dtype == 'datetime64[ns]':
-            copia[col] = copia[col].dt.strftime('%Y-%m-%d %H:%M:%S')
+    #2021-12-14: Puede haber varias columnas con el mismo nombre. En ese caso, el dtype fallaría porque no devolvería una serie, sino un df. Corregimos usando iloc.
+    for col in range(len(copia.columns)):
+        if copia.iloc[:,col].dtype == 'datetime64[ns]':
+            copia.iloc[:,col] = copia.iloc[:,col].dt.strftime('%Y-%m-%d %H:%M:%S')
     copia = copia.fillna('') #Cambio 2021-02-01. Hacer esto antes del cambio de formato implica que las columnas de tiempo, si tienen nulos, pasan a ser objects, por lo que no las convierte a texto, y la subida petaba.
     #2021-02-01: Ahora también habría que reemplazar los NaT que hubiesen poder haber quedado kaputt:
     copia = copia.replace('NaT','')
@@ -717,7 +718,7 @@ def gshLeerHoja(sheets_service, spreadsheetId, nombreHoja, rango = None):
         DataFrame con los valores leídos.
 
     """
-    
+    import pandas as pd
     # Call the Sheets API
     sheet = sheets_service.spreadsheets()
     nombreHoja = "'" + nombreHoja + "'"
@@ -732,13 +733,14 @@ def gshLeerHoja(sheets_service, spreadsheetId, nombreHoja, rango = None):
         return None
     else:
         cols = values[0]
-        df = pd.DataFrame.from_records(data=values[1:])
-        while len(df.columns) < len(cols):
-            i = len(df.columns)
-            df[cols[i]] = None
-        df.columns = cols
+        df = pd.DataFrame.from_records(data=values)
+        df.columns = df.iloc[0]
+        df = df.drop(0)
+        # while len(df.columns) < len(cols):
+        #     i = len(df.columns)
+        #     df[cols[i]] = None
+        # df.columns = cols
         return df
-
 #%%
 def gshObtenerNombreHojas(sheets_service, spreadsheetId):
     """
@@ -3355,7 +3357,7 @@ def gdrGetFolderId(drive_service, folderPath, sharedDrive = False):
                 q = q + " and 'root' in parents"
         else:
             q = q + " and '" + previo + "' in parents"
-        files = drive_service.files().list(q=q, supportsAllDrives=True, includeItemsFromAllDrives=True).execute()['files']
+        files = drive_service.files().list(q=q, corpora='domain', supportsAllDrives=True, includeItemsFromAllDrives=True).execute()['files']
         #print(q, files)
         if len(files) == 0:
             print('No se ha encontrado la carpeta', folder)
@@ -3367,7 +3369,7 @@ def gdrGetFolderId(drive_service, folderPath, sharedDrive = False):
     return retobj
 
 #%%
-def gdrListFiles(drive_service, folderId=None, folderPath=None, sharedDrive = False):
+def gdrListFiles(drive_service, folderId=None, folderPath=None, sharedDrive = False, trashed=False, fields='kind, id, name, mimeType'):
     """
     Lista los ficheros contenidos en una carpeta de drive.
     Parámetros:
@@ -3375,6 +3377,8 @@ def gdrListFiles(drive_service, folderId=None, folderPath=None, sharedDrive = Fa
         folderId        -- (str) Identificador de la carpeta.
         folderPath      -- (str) Ruta que buscar si folderId = None.
         sharedDrive   -- (bool) default False. Indica si debe listar ficheros de una unidad compartida
+        trashed       -- (bool) default False. Indica si debe listar ficheros eliminados
+        fields        -- (str) campos que debe devolver, separados por comas. Se puedes consultar los atributos disponibles en https://developers.google.com/drive/api/v3/reference/files
     Devuelve:
         Objeto diccionario con las diferentes propiedades del fichero.
     """
@@ -3394,11 +3398,14 @@ def gdrListFiles(drive_service, folderId=None, folderPath=None, sharedDrive = Fa
         folderId = fids[-1][1]
     #Si es el raíz, buscamos en mi unidad
     q = "'" + folderId + "' in parents"
+    if not trashed:
+        q += ' and trashed=false'
+    fields = 'nextPageToken, files(' + fields + ')'
     nextPageToken = None
     files = []
     while True:
         try:
-            respuesta = drive_service.files().list(q=q, supportsAllDrives=sharedDrive, includeItemsFromAllDrives=sharedDrive, pageToken=nextPageToken).execute()#['files']
+            respuesta = drive_service.files().list(q=q, fields=fields, supportsAllDrives=sharedDrive, includeItemsFromAllDrives=sharedDrive, pageToken=nextPageToken).execute()#['files']
             files = files + respuesta['files']
             if 'nextPageToken' in respuesta:
                 nextPageToken = respuesta['nextPageToken']
@@ -3406,6 +3413,7 @@ def gdrListFiles(drive_service, folderId=None, folderPath=None, sharedDrive = Fa
             else:
                 break
         except Exception as err:
+            #print(err)
             break
     return files
 #%%
