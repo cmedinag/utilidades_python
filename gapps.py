@@ -12,6 +12,7 @@ Funciones:
     - getUserPwd: Solicita mediante ventana gráfica usuario y contraseña.
     - connect: Conecta con los servicios de Google para poder usarlos.
     - comprobarMailsDominios: Comprueba si un conjunto de direcciones forman parte de los dominios aceptados
+    - getDriveIdFromURL: Devuelve el id de un fichero o carpeta a partir de su url
 
 - Google Sheets: todas estas funciones necesitan el servicio 'sheets'
     - gshBorrarHoja: elimina una hoja en un libro de google.
@@ -67,6 +68,7 @@ Funciones:
     - gdrDescargarFichero: descargará un fichero de google drive en una ruta indicada.
     - gdrFindSharedDrive: busca una unidad compartida por nombre y devuelve su id.
     - gdrGetFileProperties: devuelve todas las propiedades de un fichero.
+    - gdrGetFileRevisions: devuelve un listado de versiones de un fichero.
     - gdrGetFolderId: devuelve los identificadores de las carpetas encontradas en una ruta.
     - gdrListFiles: lista los ficheros contenidos en una carpeta de drive.
     - gdrMoveFile: mueve un fichero de una carpeta a otra.
@@ -76,6 +78,7 @@ Funciones:
     
 Versiones:
 ----------
+2022-03-04: v1.12 Se añaden funciones para recuperar versiones de un fichero y para extraer el id a partir de su url
 2021-10-29: v1.11 Se añaden campos cc a los métodos de envío de mail, y los métodos ggmCreateDraft y ggmCreateMessageWithAttachments
 2021-08-31: v1.10 Nuevas funciones de trabajo con google sheets y funciones auxiliares
 2021-03-30: v1.9. Se añade función gshDescargarHoja.
@@ -257,6 +260,9 @@ def connect(ruta_credenciales = './', archivo_credenciales = 'credentials.json',
         elif service == 'drive':
             SCOPES.append('https://www.googleapis.com/auth/drive.file')
             SCOPES.append('https://www.googleapis.com/auth/drive')
+            SCOPES.append('https://www.googleapis.com/auth/drive.appdata')
+            SCOPES.append('https://www.googleapis.com/auth/drive.metadata')
+
         elif service == 'docs':
             SCOPES.append('https://www.googleapis.com/auth/docs')
         elif service == 'gmail':
@@ -345,7 +351,27 @@ def comprobarMailsDominios (mails_destinatarios, dominios_aceptados):
     return True
 
 
-
+#%%
+def getDriveIdFromURL(linkdrive, folder=False):
+    """
+    Devuelve el id de un fichero o carpeta en Drive a partir de su url
+    
+    Parámetros:
+    -----------
+    linkdrive: (str) url de compartir en drive (extraida de obtener enlace para compartir)
+    folder   : (bool) True si el link pertenece a una carepta, False si pertenece a un archivo.
+    
+    Devuelve:
+    ---------
+    str  Cadena con el id del archivo o carpeta.
+    """
+    import re
+    if not folder:
+        iddrive = re.match(r'https://drive.google.com/file/d/(.*)/.*', linkdrive).group(1)
+    else:
+        iddrive = re.match(r'https://drive.google.com/drive/folders/(.*)', linkdrive).group(1)
+    return iddrive
+#%%
 
 
 #%%
@@ -3325,6 +3351,50 @@ def gdrGetFileProperties(drive_service, fileId = None, filePath = None, sharedDr
                 return retobj
     else:
         return drive_service.files().get(fileId=fileId, fields='*', supportsAllDrives=sharedDrive).execute()
+
+#%%
+def gdrGetFileRevisions(drive_service, fileId, devuelvePandas = True):
+    """
+    Devuelve los detalles de las versiones de un fichero.
+    Parámetros:
+        drive_service -- Objeto servicio con permisos de lectura en Google Drive. Se obtiene con el método connect.
+        fileId        -- (str) Identificador del fichero.
+        devuelvePandas -- (bool) Indica True si quiere la respuesta como pandas dataframe con las propiedades básicas, o False como objeto lista de jsons.
+    Devuelve:
+        Objeto dataframe con las diferentes revisiones del fichero.
+    """
+    import pandas as pd
+    
+    respuestas = []
+    nextPageToken = None
+    while True:
+        respuesta = drive_service.revisions().list(fileId=fileId, fields='*', pageToken=nextPageToken).execute()
+        if 'revisions' in respuesta:
+            respuestas += respuesta['revisions']
+            if 'nextPageToken' in respuesta:
+                nextPageToken = respuesta['nextPageToken']
+            else:
+                break
+        else:
+            break
+     
+    if not devuelvePandas:
+        return respuestas
+    else:
+        df = pd.DataFrame()
+        for revision in respuestas:
+            fila = pd.Series(
+                name=revision['id'], 
+                data={
+                    'modifiedTime' : revision['modifiedTime'],
+                    'userEmail'    : revision['lastModifyingUser']['emailAddress'],
+                    'userName'     : revision['lastModifyingUser']['displayName']
+                }
+            )
+            df = df.append(fila)
+
+        df['modifiedTime'] = pd.to_datetime(df['modifiedTime']).dt.tz_convert('Europe/Madrid')
+        return df
 
 #%%
 def gdrGetFolderId(drive_service, folderPath, sharedDrive = False):
