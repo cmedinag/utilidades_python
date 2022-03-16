@@ -3383,15 +3383,15 @@ def gdrGetFileRevisions(drive_service, fileId, devuelvePandas = True):
     else:
         df = pd.DataFrame()
         for revision in respuestas:
-            fila = pd.Series(
-                name=revision['id'], 
+            fila = pd.DataFrame(
+                index=[revision['id']], 
                 data={
                     'modifiedTime' : revision['modifiedTime'],
                     'userEmail'    : revision['lastModifyingUser']['emailAddress'],
                     'userName'     : revision['lastModifyingUser']['displayName']
                 }
             )
-            df = df.append(fila)
+            df = pd.concat([df, fila])
 
         df['modifiedTime'] = pd.to_datetime(df['modifiedTime']).dt.tz_convert('Europe/Madrid')
         return df
