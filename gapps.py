@@ -366,10 +366,10 @@ def getDriveIdFromURL(linkdrive, folder=False):
     str  Cadena con el id del archivo o carpeta.
     """
     import re
-    if not folder:
-        iddrive = re.match(r'https://drive.google.com/file/d/(.*)/.*', linkdrive).group(1)
-    else:
+    if folder or 'drive/folders/' in linkdrive:
         iddrive = re.match(r'https://drive.google.com/drive/folders/(.*)', linkdrive).group(1)
+    else:
+        iddrive = re.match(r'https://drive.google.com/file/d/(.*)/.*', linkdrive).group(1)
     return iddrive
 #%%
 
@@ -402,7 +402,7 @@ FORMATOS_BASE = {
         'texto_26_posic'        : {"type" : "TEXT"     , "pattern" : '00000000000000000000000000_@'}
         }
 
-def gshBorrarHoja(sheets_service, spreadsheetId, nombreHoja, idHoja=None):
+def gshBorrarHoja(sheets_service, spreadsheetId, nombreHoja=None, idHoja=None):
     """
     Esta función elimina una hoja en un libro de google.
 
@@ -565,7 +565,7 @@ def gshDescargarHoja(sheets_service, spreadsheetid, hojaId = None, nombreHoja = 
     hojaId          -- (str) Identificador de la hoja (gid)
     nombreHoja      -- (str) Nombre de la hoja. Si se proporciona hojaId, no se hace caso a este parámetro.
     ficheroDescarga -- (str) Fichero de descarga en la que dejar el fichero. Si no se indica, lo dejará en la carpeta de trabajo con el nombre de la gsheet y el id de la hoja descargada.
-    tipo            -- (str) Formato de exportación. Por defecto, 'pdf'.
+    tipo            -- (str) Formato de exportación. Por defecto, 'pdf'. Admite también 'xlsx' y 'csv'
     sobreescribir   -- (bool) Default False. Indica si debe machacar el fichero en caso de que exista, o crear un nombre nuevo en su lugar.
     
     return          -- (str) Ruta completa del fichero descargado.
@@ -722,9 +722,9 @@ def gshEscribirRango(sheets_service, lista, spreadsheetId, nombreHoja, rango, fi
     return result
 
 #%%
-def gshLeerHoja(sheets_service, spreadsheetId, nombreHoja, rango = None):
+def gshLeerHoja(sheets_service, spreadsheetId, nombreHoja, rango = None, formato_valores = 'UNFORMATTED_VALUE', formato_fechas = 'FORMATTED_STRING'):
     """
-    Esta función lee el contenido de un rango de una hoja de un libro Google.
+    Esta función lee el contenido de un rango de una hoja de un libro Google. Basada en el servicio: https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets.values/get
 
     Parameters
     ----------
@@ -737,6 +737,10 @@ def gshLeerHoja(sheets_service, spreadsheetId, nombreHoja, rango = None):
     rango : str, optional
         Rango de celdas que leer. Debe estar escrito en notación de hoja de cálculo. Ejemplos: 'A1', 'B2:C2', 'B4:F10'. 
         The default is None.
+    formato_valores : str, optional, default = 'UNFORMATTED_VALUE'
+        Indica 'FORMATTED_VALUE' si debe traer el valor tal cual se representa en la gsheet (con el formato de moneda, por ejemplo), o 'UNFORMATTED_VALUE'si debe recuperar el valor original.
+    formato_fechas: str, optional, default = 'FORMATTED_STRING'
+        Indica cómo debe representar las fechas en la salida. Posibles valores: 'SERIAL_NUMBER' o 'FORMATTED_STRING' (https://developers.google.com/sheets/api/reference/rest/v4/DateTimeRenderOption)
 
     Returns
     -------
@@ -750,8 +754,13 @@ def gshLeerHoja(sheets_service, spreadsheetId, nombreHoja, rango = None):
     nombreHoja = "'" + nombreHoja + "'"
     if not rango is None:
         nombreHoja = nombreHoja + "!" + rango
-    result = sheet.values().get(spreadsheetId=spreadsheetId,
-                                range=nombreHoja).execute()
+       
+    result = sheet.values().get(
+        spreadsheetId        = spreadsheetId,
+        range                = nombreHoja,
+        valueRenderOption    = formato_valores,
+        dateTimeRenderOption = formato_fechas
+    ).execute()
     values = result.get('values', [])
 
     if not values:
@@ -759,9 +768,9 @@ def gshLeerHoja(sheets_service, spreadsheetId, nombreHoja, rango = None):
         return None
     else:
         cols = values[0]
-        df = pd.DataFrame.from_records(data=values)
-        df.columns = df.iloc[0]
-        df = df.drop(0)
+        df = pd.DataFrame.from_records(data=values[1:], columns = cols)
+        # df.columns = df.iloc[0]
+        # df = df.drop(0)
         # while len(df.columns) < len(cols):
         #     i = len(df.columns)
         #     df[cols[i]] = None
@@ -2539,6 +2548,7 @@ def ggmCreateMessage(to, subject='', message_text='', sender='me', replyTo = Non
     - message_text: (str) Opcional. Cuerpo del correo.
     - sender: (str) Dirección del remitente (predeterminado 'me'). Se puede usar el valor especial 'me' para considerar que es la dirección propia. Si se desea utilizar un nombre distinto debe ir en formato "NOMBRE DEL REMITENTE <direccion_de_correo_propia@bbva.com>". La dirección de correo propia se puede obtener con la función ggmGetPrimaryAddress().
     - replyTo: (str) Opcional. Si se desea que al contestar el correo se dirija a una dirección diferente, indicarla aquí.
+    - html: (bool) Opcional. Indica si el mensaje debe interpretarse como código html.
     - cc: (str) Opcional. Destinatario en copia. En caso de haber varios, se separan por coma.
 
     Returns:
@@ -2577,6 +2587,7 @@ def ggmCreateMessageWithAttachment(to, file_dir, filename, subject='', message_t
     - message_text: (str) Opcional. Cuerpo del correo.
     - sender: (str) Dirección del remitente (predeterminado 'me'). Se puede usar el valor especial 'me' para considerar que es la dirección propia. Si se desea utilizar un nombre distinto debe ir en formato "NOMBRE DEL REMITENTE <direccion_de_correo_propia@bbva.com>". La dirección de correo propia se puede obtener con la función ggmGetPrimaryAddress().
     - replyTo: (str) Opcional. Si se desea que al contestar el correo se dirija a una dirección diferente, indicarla aquí.
+    - html: (bool) Opcional. Indica si el mensaje debe interpretarse como código html.
     - cc: (str) Opcional. Destinatario en copia. En caso de haber varios, se separan por coma.
 
     Returns:
@@ -2654,6 +2665,7 @@ def ggmCreateMessageWithAttachments(to, ficheros, subject='', message_text='', s
     - message_text: (str) Opcional. Cuerpo del correo.
     - sender: (str) Dirección del remitente (predeterminado 'me'). Se puede usar el valor especial 'me' para considerar que es la dirección propia. Si se desea utilizar un nombre distinto debe ir en formato "NOMBRE DEL REMITENTE <direccion_de_correo_propia@bbva.com>". La dirección de correo propia se puede obtener con la función ggmGetPrimaryAddress().
     - replyTo: (str) Opcional. Si se desea que al contestar el correo se dirija a una dirección diferente, indicarla aquí.
+    - html: (bool) Opcional. Indica si el mensaje debe interpretarse como código html.
     - cc: (str) Opcional. Destinatario en copia. En caso de haber varios, se separan por coma.
 
     Returns:
