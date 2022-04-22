@@ -369,7 +369,10 @@ def getDriveIdFromURL(linkdrive, folder=False):
     if folder or 'drive/folders/' in linkdrive:
         iddrive = re.match(r'https://drive.google.com/drive/folders/(.*)', linkdrive).group(1)
     else:
-        iddrive = re.match(r'https://drive.google.com/file/d/(.*)/.*', linkdrive).group(1)
+        try:
+            iddrive = re.match(r'https://drive.google.com/file/d/(.*)/.*', linkdrive).group(1)
+        except:
+            iddrive = re.match(r'https://docs.google.com/.*/d/(.*)/.*', linkdrive).group(1)
     return iddrive
 #%%
 
@@ -557,7 +560,7 @@ def gshCrearLibro(sheets_service, nombreLibro, nombreHoja = None):
     return request.execute()
 
 #%%
-def gshDescargarHoja(sheets_service, spreadsheetid, hojaId = None, nombreHoja = None, ficheroDescarga = None, tipo='pdf', sobreescribir = False):
+def gshDescargarHoja(sheets_service, spreadsheetid, hojaId = None, nombreHoja = None, ficheroDescarga = None, tipo='pdf', sobreescribir = False, vertical = True, size = 'A4'):
     """
     Esta función descargará una sola hoja de una gsheet a un fichero.
     sheets_service  -- Objeto servicio con permisos de lectura en Google Sheets. Se obtiene con el método connect.
@@ -567,6 +570,8 @@ def gshDescargarHoja(sheets_service, spreadsheetid, hojaId = None, nombreHoja = 
     ficheroDescarga -- (str) Fichero de descarga en la que dejar el fichero. Si no se indica, lo dejará en la carpeta de trabajo con el nombre de la gsheet y el id de la hoja descargada.
     tipo            -- (str) Formato de exportación. Por defecto, 'pdf'. Admite también 'xlsx' y 'csv'
     sobreescribir   -- (bool) Default False. Indica si debe machacar el fichero en caso de que exista, o crear un nombre nuevo en su lugar.
+    vertical        -- (bool) Default True. Indica si la exportación se debe realizar (si tipo es 'pdf') en vertical (True) o apaisado (False) 
+    size            -- (str) Tamaño del folio a descargar (si tipo es 'pdf')
     
     return          -- (str) Ruta completa del fichero descargado.
     """
@@ -591,6 +596,11 @@ def gshDescargarHoja(sheets_service, spreadsheetid, hojaId = None, nombreHoja = 
         'format': tipo,
         'gid': hojaId,
     } 
+    if tipo == 'pdf':
+        if not vertical:
+            params['portrait'] = False
+        params['size'] =  size
+        
     queryParams = urllib.parse.urlencode(params)
     url = exportUrl + '&' + queryParams
     
@@ -688,21 +698,46 @@ def gshEscribirHoja(sheets_service, dataframe, spreadsheetId, nombreHoja, rango 
 def gshEscribirRango(sheets_service, lista, spreadsheetId, nombreHoja, rango, fillna = None):
     """
     Esta función escribe una lista de valores en una hoja de google.
-    
-    sheets_service = Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
-    lista = [[]] lista de 2 dimensiones con los valores que se desean escribir. Cada elemento de la lista representa una fila. 
-    Cada elemento debe ser una lista a su vez, con los valores de las columnas de dicha fila. No admite tipos datetime, hay que convertirlos previamente a str.
-    spreadsheetId = str, Identificador del libro en Google Drive.
-    nombreHoja = str, Nombre de la hoja en la que se desea escribir dentro del libro.
-    rango = str, Rango de celdas que escribir, o bien celda en la que escribir el primer valor. Debe estar escrito en notación de hoja de cálculo. Ejemplos: A1, B2:C2, B4:F10
-    fillna = Especifica si debe cambiar los valores nulos por algo. Posibles valores: Si True cambia los nulos por cadena vacía. Si es un str, cambia los nulos por dicho valor. Si es False o None, no cambia los valores nulos. En este caso, si existe valor en una celda, no lo sobreescribirá.
+
+    Parameters
+    ----------
+    sheets_service : service
+        Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
+    lista : [[]] o pandas dataframe
+        dataframe o lista de 2 dimensiones con los valores que se desean escribir. 
+        Si es lista, cada elemento de la lista representa una fila.
+    spreadsheetId : str
+        Identificador del libro en Google Drive.
+    nombreHoja : str
+        Nombre de la hoja en la que se desea escribir dentro del libro.
+    rango : str
+        Rango de celdas que escribir, o bien celda en la que escribir el primer valor. 
+        Debe estar escrito en notación de hoja de cálculo. Ejemplos: A1, B2:C2, B4:F10.
+    fillna : bool, optional
+        Especifica si debe cambiar los valores nulos por algo. 
+        Posibles valores: 
+            Si True cambia los nulos por cadena vacía. 
+            Si es un str, cambia los nulos por dicho valor. 
+            Si es False o None, no cambia los valores nulos. En este caso, si existe valor en una celda, no lo sobreescribirá. 
+        The default is None.
+
+    Returns
+    -------
+    result : TYPE
+        DESCRIPTION.
+
     """
+    import pandas
+    
     sheet = sheets_service.spreadsheets()
     #Comprobamos si la hoja existe. En caso contrario, se crea:
     if nombreHoja not in gshObtenerNombreHojas(sheets_service, spreadsheetId):
         gshCrearHoja(sheets_service, spreadsheetId=spreadsheetId, nombreHoja=nombreHoja)
     #Por si viene rango, envolvemos el nombre de la hoja entre comillas
     nombreHoja = "'" + nombreHoja + "'!" + rango
+    
+    if type(lista) == pandas.core.frame.DataFrame:
+        lista = lista.values.tolist()
     
     if fillna is not None:
         if type(fillna) == bool and fillna:
@@ -722,7 +757,7 @@ def gshEscribirRango(sheets_service, lista, spreadsheetId, nombreHoja, rango, fi
     return result
 
 #%%
-def gshLeerHoja(sheets_service, spreadsheetId, nombreHoja, rango = None, formato_valores = 'UNFORMATTED_VALUE', formato_fechas = 'FORMATTED_STRING'):
+def gshLeerHoja(sheets_service, spreadsheetId, nombreHoja, rango = None, header = True, formato_valores = 'UNFORMATTED_VALUE', formato_fechas = 'FORMATTED_STRING'):
     """
     Esta función lee el contenido de un rango de una hoja de un libro Google. Basada en el servicio: https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets.values/get
 
@@ -737,6 +772,8 @@ def gshLeerHoja(sheets_service, spreadsheetId, nombreHoja, rango = None, formato
     rango : str, optional
         Rango de celdas que leer. Debe estar escrito en notación de hoja de cálculo. Ejemplos: 'A1', 'B2:C2', 'B4:F10'. 
         The default is None.
+    header : bool, optional, default=True
+        Indica si el rango a leer tiene cabecera.
     formato_valores : str, optional, default = 'UNFORMATTED_VALUE'
         Indica 'FORMATTED_VALUE' si debe traer el valor tal cual se representa en la gsheet (con el formato de moneda, por ejemplo), o 'UNFORMATTED_VALUE'si debe recuperar el valor original.
     formato_fechas: str, optional, default = 'FORMATTED_STRING'
@@ -767,8 +804,11 @@ def gshLeerHoja(sheets_service, spreadsheetId, nombreHoja, rango = None, formato
         print('No data found.')
         return None
     else:
-        cols = values[0]
-        df = pd.DataFrame.from_records(data=values[1:], columns = cols)
+        if header:
+            cols = values[0]
+            df = pd.DataFrame.from_records(data=values[1:], columns = cols)
+        else:
+            df = pd.DataFrame.from_records(data=values)
         # df.columns = df.iloc[0]
         # df = df.drop(0)
         # while len(df.columns) < len(cols):
