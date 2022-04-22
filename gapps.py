@@ -43,6 +43,7 @@ Funciones:
     - gshFormatoCondicionalRango: Genera las reglas de formato condicional en un conjunto de rangos. 
     - gshEliminarValidacionRango: elimina todas las fórmulas de validación de un rango de celdas.
     - gshValidacionDesplegableRango: crea validaciones de lista desplegable en un rango de celdas.
+    - gshBordearRango: formatea los bordes de un rango de celdas.
     
 - Google Docs: todas estas funciones necesitan el servicio 'docs'
     - gdcCrearDoc: crea un documento de Google Docs.
@@ -74,10 +75,13 @@ Funciones:
     - gdrMoveFile: mueve un fichero de una carpeta a otra.
     - gdrSubirVersión: a partir de un fichero local, sube una nueva versión a un fichero ya existente en Google Drive.
     - gdrUploadFile: sube un fichero local a Google Drive.
+    - gdrRecursiveFind:  Función que realiza una búsqueda recursiva de todos los ficheros que están
+    dentro de una carpeta
     
     
 Versiones:
 ----------
+2022-04-22: v1.13 Se añeden funciones de formateo de celdas y bordes y búsqueda recursiva en Google Drive
 2022-03-04: v1.12 Se añaden funciones para recuperar versiones de un fichero y para extraer el id a partir de su url
 2021-10-29: v1.11 Se añaden campos cc a los métodos de envío de mail, y los métodos ggmCreateDraft y ggmCreateMessageWithAttachments
 2021-08-31: v1.10 Nuevas funciones de trabajo con google sheets y funciones auxiliares
@@ -105,6 +109,7 @@ from __future__ import print_function
 import pickle
 import os
 import os.path
+import re
 from apiclient import errors
 
 from googleapiclient.discovery import build
@@ -695,7 +700,7 @@ def gshEscribirHoja(sheets_service, dataframe, spreadsheetId, nombreHoja, rango 
     return result
 
 #%%
-def gshEscribirRango(sheets_service, lista, spreadsheetId, nombreHoja, rango, fillna = None):
+def gshEscribirRango(sheets_service, lista, spreadsheetId, nombreHoja, rango, fillna = None, header=False):
     """
     Esta función escribe una lista de valores en una hoja de google.
 
@@ -720,6 +725,11 @@ def gshEscribirRango(sheets_service, lista, spreadsheetId, nombreHoja, rango, fi
             Si es un str, cambia los nulos por dicho valor. 
             Si es False o None, no cambia los valores nulos. En este caso, si existe valor en una celda, no lo sobreescribirá. 
         The default is None.
+    header : bool, optional
+        Para el caso de que se pase un dataframe en el campo 'Lista', indica si se
+        quieren escribir las cabeceras además de los valores. 
+            Si True escribe cabecera y valores empezando la cabecera en la primera celda de 'rango'.
+            Si False escribe solo los valores del dataframe empezando el primer valor en la primera celda de 'rango'
 
     Returns
     -------
@@ -736,8 +746,14 @@ def gshEscribirRango(sheets_service, lista, spreadsheetId, nombreHoja, rango, fi
     #Por si viene rango, envolvemos el nombre de la hoja entre comillas
     nombreHoja = "'" + nombreHoja + "'!" + rango
     
+    #Si como 'lista' me han pasado un dataframe lo convierto a lista. 
+    #Adicionalmente convierto los NaN a None para que el fillna de a continuación funcione
     if type(lista) == pandas.core.frame.DataFrame:
-        lista = lista.values.tolist()
+        cabecera = [[nom_columna for nom_columna in lista.columns]] 
+        lista    = [  [None if pd.isna(valor) else valor for valor in fila]   for fila in lista.values.tolist() ]
+        if header:
+            lista = cabecera + lista
+        
     
     if fillna is not None:
         if type(fillna) == bool and fillna:
@@ -1902,7 +1918,104 @@ def gshEliminarFormatoRango (sheets_service, spreadsheetId, nombreHoja, rango, i
         return False
     
     return True
+
+
+
+
+
+#%%
+#https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets/cells?hl=en#borders
+def gshBordearRango(sheets_service, spreadsheetId, nombreHoja, rango, idHoja = None,
+                    arriba = None,
+                    abajo = None,
+                    izquierda = None,
+                    derecha = None
+
+):
+    """
+    Establece un formato para los bordes del rango especificado.
+
+    Parameters
+    ----------
+    sheets_service : service object
+        Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
+    spreadsheetId : str
+        Identificador del libro en Google Drive.
+    nombreHoja : str
+        Nombre de la hoja en la que se desea escribir dentro del libro.
+    rango : str 
+        Rango a aplicar el formato con notación de la sheet. Ejemplo: 'C6:O12'
+    idHoja : str, optional
+        Id de la hoja dentro de la spreadsheet. Si se especifica este parámetro se ignora el 'nombreHoja'. The default is None.
+    arriba: dict, optional
+    abajo: dict, optional
+    izquierda: dict, optional
+    derecha: dict, optional
+
+    Para cualquiera de los bordes (arriba, abajo, izquierda, derecha) es necesario  un diccionario
+    especificando el estilo y color del borde
+        {"style":  str, optional default NONE "DOTTED", "DASHED", "SOLID", "SOLID_MEDIUM", "SOLID_THICK", "NONE", "DOUBLE"
+         "color": dict, optional  default NONE {
+             "red": decimal. Valores numérico entre 0 y 1
+             "green": decimal. Valores numérico entre 0 y 1
+             "blue": decimal. Valores numérico entre 0 y 1
+             "alpha": decimal. Valores numérico entre 0 y 1
+         }
+        }
+
+    Ejemplo:
+
+    {
+    "style": "DASHED",
+    "color": {
+                "red": 1.0
+            }
+    }
+
+
+    Returns
+    -------
+    bool
+        True si ha funcionado correctamente, False en caso contrario.
+    """
+
+    if idHoja is None:
+        idHoja = gshObtenerIDHoja(sheets_service, spreadsheetId, nombreHoja) 
+        
+    if idHoja is None:
+        print("No se puede formatear la hoja")
+        return False
     
+    rango_req = gshTraducirRango(rangoLetras=rango, sheetId=idHoja)
+    if rango_req is None:
+        print("No se ha proporcionado un rango correcto para el formato")
+        return False    
+
+    request_formato = {
+         'requests' : [
+             {
+                  'updateBorders':
+                    {
+                        'range':  rango_req,
+                        "top":    arriba,
+                        "left":   izquierda,
+                        'right':  derecha,
+                        'bottom': abajo
+                    }    
+            }] 
+        }  
+    
+    try:
+        sheets_service.spreadsheets().batchUpdate(spreadsheetId=spreadsheetId, body=request_formato).execute()
+    except Exception as e:
+        print("Error formateando la hoja:", e)
+        return False
+    
+    return True
+
+ 
+    
+
 
 def gshFormatearRango(sheets_service, spreadsheetId, nombreHoja, rango, idHoja = None,
                       formatoNumero = None, 
@@ -1913,7 +2026,8 @@ def gshFormatearRango(sheets_service, spreadsheetId, nombreHoja, rango, idHoja =
                       subrayado  = None,
                       tachado    = None,
                       tamLetra   = None,
-                      tipoLetra  = None
+                      tipoLetra  = None,
+                      borde      = None
                       ):
     """
     Da el formato especificado a un rango de celdas de una google sheet. 
@@ -2035,9 +2149,22 @@ def gshFormatearRango(sheets_service, spreadsheetId, nombreHoja, rango, idHoja =
                 }, #end Cell            
             'fields' : 'userEnteredFormat('+ ",".join(fields) +')'
             }
-        } #end RepeatCell      
+        }, #end RepeatCell,
+        { 'updateBorders': {
+            'range': rango_req,
+             "bottom": {
+                "style": "DASHED",
+                "width": 1,
+                "color": {
+                "blue": 1.0
+                    }
+                }
+            }
+
+        } #end updateborders     
         ] }  
     
+    print(request_formato)
     try:
         sheets_service.spreadsheets().batchUpdate(spreadsheetId=spreadsheetId, body=request_formato).execute()
     except Exception as e:
@@ -3676,4 +3803,37 @@ def gdrUploadFile(drive_service, filename, mimetype=None):
         supportsAllDrives=True
     ).execute()
     return file
+#%%
+
+#%%
+def gdrRecursiveFind(drive_service, folderId, ruta = None):
+    """
+    Función que realiza una búsqueda recursiva de todos los ficheros que están
+    dentro de una carpeta
+    Parámetros:
+        drive_service -- Servicio con permisos para google drive.
+        folderId      -- (str) id de la carpeta donde buscar los ficheros
+    Devuelve un dataframe pandas con la relación de ficheros encontrados: tipo de fichero (kind),
+    identificador de fichero (id), nombre de fichero (name), mimeType, teamDriveId, driveIdd
+    """
+    df = pd.DataFrame()
+
+    q = "'" + folderId + "' in parents"
+    nombre_carpeta = gdrGetFileProperties(drive_service, fileId=folderId, sharedDrive = True)['name']
+
+    for o in drive_service.files().list(q = q, supportsAllDrives=True, includeItemsFromAllDrives=True).execute()['files']:
+
+
+        if o['mimeType'] == 'application/vnd.google-apps.folder':
+
+            df = pd.concat([df,
+                            gdrRecursiveFind(drive_service, o['id'],
+                            nombre_carpeta + '/' + o['name'])])
+
+        else:
+            o['ruta'] = ruta
+            nueva_fila = pd.Series(o).to_frame().T
+            df = pd.concat([df, nueva_fila])
+
+    return df.reset_index(drop = True)
 #%%
