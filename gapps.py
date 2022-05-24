@@ -19,9 +19,12 @@ Funciones:
     - gshCrearHoja: crea una nueva hoja en un libro de google.
     - gshDuplicarHoja: duplica una hoja en un libro de google.
     - gshCrearLibro: crea un nuevo libro GSheets y lo deja en "Mi unidad".
+    - gshRenombrarLibro: Renombra un libro de gsheets.
     - gshDescargarHoja: exporta una sola hoja de una gsheet.
     - gshEscribirHoja: escribe un pandas dataframe en una hoja de google.
     - gshEscribirRango: escribe una lista de valores en una hoja de google.
+    - gshLimpiarHoja: Esta función limpia todo el contenido de una hoja, pero no la elimina.
+    - gshLimpiarRango: Esta función limpia el contenido de un rango dentro de una hoja
     - gshLeerHoja: lee el contenido de un rango de una hoja de un libro Google.
     - gshObtenerNombreHojas: devuelve los nombres de hojas que tiene un libro de Google.
     - gshObtenerNombreIdHojas: devuelve un diccionario con los nombres e IDs de hojas que tiene un libro de Google.
@@ -481,7 +484,7 @@ def gshCrearHoja(sheets_service, spreadsheetId, nombreHoja, nFilas = 100, nCols 
         print('La hoja ya existe, no se realiza ninguna acción')
         return None
 
-
+#%%
 
 def gshDuplicarHoja(sheets_service, spreadsheetId, nombreHojaOrig, nombreHojaNueva, indiceNuevaHoja = None):
     """
@@ -699,6 +702,7 @@ def gshEscribirHoja(sheets_service, dataframe, spreadsheetId, nombreHoja, rango 
 
     return result
 
+
 #%%
 def gshEscribirRango(sheets_service, lista, spreadsheetId, nombreHoja, rango, fillna = None, header=False):
     """
@@ -771,6 +775,78 @@ def gshEscribirRango(sheets_service, lista, spreadsheetId, nombreHoja, rango, fi
                                                    ).execute()
 
     return result
+
+#%%
+def gshLimpiarHoja(sheets_service, spreadsheetId, nombreHoja):
+    """
+    Esta función limpia todo el contenido de una hoja, pero no la elimina. 
+
+    Parameters
+    ----------
+    sheets_service : service
+        Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
+    spreadsheetId : str
+        Identificador del libro en Google Drive..
+    nombreHoja : str
+        Nombre de la hoja que se desea borrar.
+
+    Returns
+    -------
+    result : TYPE
+        Resultado de la ejecución del borrado.
+        None si no existe la hoja a borrar
+
+    """    
+    sheet = sheets_service.spreadsheets()
+    #Comprobamos si la hoja existe. En caso contrario, se crea:
+    if nombreHoja not in gshObtenerNombreHojas(sheets_service, spreadsheetId):
+        print('La hoja que se desea borrar no existe dentro del libro')
+        return None
+    
+    
+    result = sheet.values().clear(spreadsheetId = spreadsheetId, range = nombreHoja).execute()
+
+    return result
+
+
+def gshLimpiarRango(sheets_service, spreadsheetId, nombreHoja, rango=None):
+    """
+    Esta función limpia el contenido de un rango dentro de una hoja
+
+    Parameters
+    ----------
+    sheets_service : service
+        Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
+    spreadsheetId : str
+        Identificador del libro en Google Drive..
+    nombreHoja : str
+        Nombre de la hoja que se desea borrar.
+    rango : str, optional
+        Rango en formato hoja de cálculo a borrar. Ejemplo: 'A3:B45' o 'C:C'
+        Si vale None se borra la hoja entera.
+        The default is None
+
+    Returns
+    -------
+    result : TYPE
+        Resultado de la ejecución del borrado.
+        None si no existe la hoja a borrar
+
+    """    
+    if rango is None:
+        return gshLimpiarHoja(sheets_service, spreadsheetId, nombreHoja)
+    
+    sheet = sheets_service.spreadsheets()
+    #Comprobamos si la hoja existe. En caso contrario, se crea:
+    if nombreHoja not in gshObtenerNombreHojas(sheets_service, spreadsheetId):
+        print('La hoja que se desea borrar no existe dentro del libro')
+        return None
+    
+    
+    result = sheet.values().clear(spreadsheetId = spreadsheetId, range = "'"+nombreHoja+"'!"+rango).execute()
+
+    return result
+
 
 #%%
 def gshLeerHoja(sheets_service, spreadsheetId, nombreHoja, rango = None, header = True, formato_valores = 'UNFORMATTED_VALUE', formato_fechas = 'FORMATTED_STRING'):
@@ -1350,9 +1426,7 @@ def gshObtenerRangosProtegidos(sheets_service, spreadsheetId):
     return rangos_protegidos           
                 
 
-                
-                
-
+#%%
 def gshProtegerRango(sheets_service, spreadsheetId, nombreHoja, usuariosEdicion, rango=None, idRango=None, nombreRango=None, gruposEdicion = None):
     """
     Esta función protege uno o varios rangos de un libro. Si no se proporciona el ID del rango protegido, crea un nuevo rango.
@@ -1546,16 +1620,41 @@ def gshEliminarRangoProtegido(sheets_service, spreadsheetId, idRango):
     
     return True
     
+#%%
+def gshRenombrarLibro(sheets_service, spreadsheetId, nuevo_nombre):
+    """
+    Parametros
+    ----------
+    sheets_service : service object
+        Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
+    spreadsheetId : str
+        Identificador de la gsheet.
+    nuevo_nombre : str
+        Nuevo nombre que debe tener el libro
+
+    Returns
+    -------
+    None.
+    """
+    body = {
+        'requests': {
+            "updateSpreadsheetProperties": {
+                "properties": {
+                    "title": nuevo_nombre
+                },
+                "fields": "title"
+            }
+        }
+    }
+        
+    resultado = sheets_service.spreadsheets().batchUpdate(
+        spreadsheetId = spreadsheetId,
+        body = body
+    ).execute()
     
-
-
-
-
-
-
+    return resultado
 
 #%%
-
 def gshTraducirColor(color) :
     """
     Recibe un color RGB y lo traduce a su representación JSON
@@ -1591,9 +1690,6 @@ def gshTraducirColor(color) :
     return resul_color
 
 #%%
-
-
-
 def gshTraducirRango(rangoLetras, sheetId):
     """
     Recibe un rango con el formato habitual de una sheet (Ejemplo: 'A25:J48') y lo traduce a un
