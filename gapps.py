@@ -67,6 +67,7 @@ Funciones:
     - ggmSendMessage: envía un mensaje de gmail.
     
 - Google Drive: todas estas funciones necesitan el servicio 'drive'
+    - gdrBorrarFichero: elimina un fichero de google drive.
     - gdrCambiarPermisos: cambia los permisos de un elemento en drive.
     - gdrCopiarDocumento: realiza una copia de un documento drive.
     - gdrDescargarFichero: descargará un fichero de google drive en una ruta indicada.
@@ -898,15 +899,19 @@ def gshLeerHoja(sheets_service, spreadsheetId, nombreHoja, rango = None, header 
     else:
         if header:
             cols = values[0]
-            df = pd.DataFrame.from_records(data=values[1:], columns = cols)
+            data = values[1:]
+            len_data = max([len(fila) for fila in data])
+            while len(cols)<len_data:
+                cols.append('')
+                
+            while len(data[0])<len(cols):
+                data[0].append(None)
+                
+            df = pd.DataFrame.from_records(data=data, columns = cols)
         else:
             df = pd.DataFrame.from_records(data=values)
-        # df.columns = df.iloc[0]
-        # df = df.drop(0)
-        # while len(df.columns) < len(cols):
-        #     i = len(df.columns)
-        #     df[cols[i]] = None
-        # df.columns = cols
+        
+        
         return df
 #%%
 def gshObtenerNombreHojas(sheets_service, spreadsheetId):
@@ -2109,10 +2114,7 @@ def gshBordearRango(sheets_service, spreadsheetId, nombreHoja, rango, idHoja = N
     
     return True
 
- 
-    
-
-
+#%%
 def gshFormatearRango(sheets_service, spreadsheetId, nombreHoja, rango, idHoja = None,
                       formatoNumero = None, 
                       colorFondo = None,
@@ -2271,7 +2273,6 @@ def gshFormatearRango(sheets_service, spreadsheetId, nombreHoja, rango, idHoja =
 
 
 #%%
-
 def gshEliminarFormatosCondicionalesHoja(sheets_service, spreadsheetId, nombreHoja):
     """
     Elimina todas las reglas de formato condicional de una hoja
@@ -2333,8 +2334,7 @@ def gshEliminarFormatosCondicionalesHoja(sheets_service, spreadsheetId, nombreHo
     
     return True
     
-
-
+#%%
 def gshFormatoCondicionalRango(sheets_service, spreadsheetId, nombreHoja, reglas_formatos, idHoja=None ):
     """
     Genera las reglas de formato condicional en un conjunto de rangos
@@ -2479,14 +2479,7 @@ def gshFormatoCondicionalRango(sheets_service, spreadsheetId, nombreHoja, reglas
     
     return True
 
-
-
-
-
-
 #%%
-
-
 def gshEliminarValidacionRango(sheets_service, spreadsheetId, nombreHoja, rango, idHoja = None):
     """
     Elimina todas las fórmulas de validación del rango proporcionado.
@@ -2540,8 +2533,7 @@ def gshEliminarValidacionRango(sheets_service, spreadsheetId, nombreHoja, rango,
         return False
     return True
 
-
-
+#%%
 def gshValidacionDesplegableRango(sheets_service, spreadsheetId, nombreHoja, rango, valoresValidacion, idHoja = None):
     """
     Hace que un rango sólo pueda tener los valores especificados en valoresValidacion y se
@@ -2615,10 +2607,6 @@ def gshValidacionDesplegableRango(sheets_service, spreadsheetId, nombreHoja, ran
         print("Error formateando la hoja:", e)
         return False
     return True
-
-
-
-
 
 
 ######################################################################################################
@@ -3216,9 +3204,38 @@ def ggmSendMessage(service, message, user_id='me'):
     except Exception as error:
         print ('An error occurred:', error)
 
+#%%
 ######################################################################################################
 # GOOGLE DRIVE
 ######################################################################################################
+def gdrBorrarFichero(drive_service, fileId, sharedDrive=True, exterminar=False):
+    """
+    Función que elimina un fichero de Google Drive estableciendo la marca trashed a True
+
+    Parameters
+    ----------
+    drive_service : Objeto servicio con permisos de escritura en Google Drive. Se obtiene con el método connect.
+    fileId : str
+        Identificador del fichero en Drive.
+    sharedDrive : bool, optional
+        Indica si el fichero se encuentra dentro de una unidad compartida. The default is True.
+    exterminar : bool, optional
+        Indica si el fichero se debe eliminar sin pasar siquiera por papelera de reciclaje. The default is False.
+
+    Returns
+    -------
+    Respuesta de la llamada.
+    """
+    if exterminar:
+        drive_response = drive_service.files().delete(
+            fileId=fileId, supportsAllDrives=sharedDrive).execute()
+    else:
+        body = {'trashed':True}
+        drive_response = drive_service.files().update(
+            fileId=fileId, body=body, supportsAllDrives=sharedDrive).execute()
+    return drive_response
+    
+#%%
 def gdrCambiarPermisos(drive_service, fileId, reset='no', permisos=None, usuarios=None, roles=None, notificar=False, cualquiera = None, sharedDrive=False):
     """
     Función que gestiona los permisos de un elemento en Drive.
