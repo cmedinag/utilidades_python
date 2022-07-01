@@ -1,4 +1,3 @@
-
 # -*- coding: utf-8 -*-
 """
 Este paquete permite trabajar con las herramientas de Google. Se irá actualizando poco a poco.
@@ -8,45 +7,51 @@ Antes de poder utilizar las funciones, es necesario almacenar en una variable la
 Funciones:
 ----------
 - Propósito general:
-    - setProxy: Establece el uso de un proxy en la red actual.
-    - getUserPwd: Solicita mediante ventana gráfica usuario y contraseña.
-    - connect: Conecta con los servicios de Google para poder usarlos.
     - comprobarMailsDominios: Comprueba si un conjunto de direcciones forman parte de los dominios aceptados
+    - connect: Conecta con los servicios de Google para poder usarlos.
     - getDriveIdFromURL: Devuelve el id de un fichero o carpeta a partir de su url
+    - getUserPwd: Solicita mediante ventana gráfica usuario y contraseña.
+    - resetProxy: Elimina el uso de un proxy
+    - setProxy: Establece el uso de un proxy en la red actual.
+    - str2ascii: Función que elimina tildes y acentos de caracteres de una cadena.
 
 - Google Sheets: todas estas funciones necesitan el servicio 'sheets'
-    - gshBorrarHoja: elimina una hoja en un libro de google.
-    - gshCrearHoja: crea una nueva hoja en un libro de google.
-    - gshDuplicarHoja: duplica una hoja en un libro de google.
-    - gshCrearLibro: crea un nuevo libro GSheets y lo deja en "Mi unidad".
-    - gshRenombrarLibro: Renombra un libro de gsheets.
-    - gshDescargarHoja: exporta una sola hoja de una gsheet.
-    - gshEscribirHoja: escribe un pandas dataframe en una hoja de google.
-    - gshEscribirRango: escribe una lista de valores en una hoja de google.
-    - gshLimpiarHoja: Esta función limpia todo el contenido de una hoja, pero no la elimina.
-    - gshLimpiarRango: Esta función limpia el contenido de un rango dentro de una hoja
-    - gshLeerHoja: lee el contenido de un rango de una hoja de un libro Google.
-    - gshObtenerNombreHojas: devuelve los nombres de hojas que tiene un libro de Google.
-    - gshObtenerNombreIdHojas: devuelve un diccionario con los nombres e IDs de hojas que tiene un libro de Google.
-    - gshObtenerIDHoja: devuelve el ID de una hoja concreta dentro de una spreadsheet.
-    - gshOrdenarHojas: Ordena las hojas dentro de una spreadsheet.
-    - gshObtenerVistasFiltro: devuelve los nombres e ids de las vistas de filtro de hoja de google
-    - gshCrearActualizarVistaFiltro: Actualiza o crea una o varias vistas de filtro
-    - gshBorrarVistaFiltro: borra una vista de filtro, si existe.
-    - gshObtenerRangosProtegidos: Devuelve todos los rangos protegidos de un libro.
-    - gshProtegerRango: Esta función protege uno o varios rangos de un libro.
-    - gshEliminarRangoProtegido: Elimina uno varios rangos protegidos de un libro.
-    - gshTraducirColor: Recibe un color RGB y lo traduce a su representación JSON
-    - gshTraducirRango: traduce un rango tipo 'A5:J27' a un objeto tipo GridRange de la API google
-    - gshTraducirRangoInverso: traduce la representación JSON de un rango a formato de una sheet    
-    - gshFormatearHoja: da formato corporativo básico a una hoja.
-    - gshEliminarFormatoRango: Para un rango de celdas, las vuelve a poner con el formato por defecto
-    - gshFormatearRango: para un rango de celdas, les da el formato especificado
-    - gshEliminarFormatosCondicionalesHoja: Elimina todas las reglas de formato condicional de una hoja
-    - gshFormatoCondicionalRango: Genera las reglas de formato condicional en un conjunto de rangos. 
-    - gshEliminarValidacionRango: elimina todas las fórmulas de validación de un rango de celdas.
-    - gshValidacionDesplegableRango: crea validaciones de lista desplegable en un rango de celdas.
-    - gshBordearRango: formatea los bordes de un rango de celdas.
+    - Estructurales:
+        - gshBorrarHoja: elimina una hoja en un libro de google.
+        - gshBorrarVistaFiltro: borra una vista de filtro, si existe.
+        - gshCrearActualizarVistaFiltro: Actualiza o crea una o varias vistas de filtro
+        - gshCrearHoja: crea una nueva hoja en un libro de google.
+        - gshCrearLibro: crea un nuevo libro GSheets y lo deja en "Mi unidad".
+        - gshDuplicarHoja: duplica una hoja en un libro de google.
+        - gshListarOpcionesFiltro: Devuelve una lista con los posibles valores que puede tomar una opción de filtro.
+        - gshObtenerRangosProtegidos: Devuelve todos los rangos protegidos de un libro.
+        - gshObtenerVistasFiltro: devuelve los nombres e ids de las vistas de filtro de hoja de google
+        - gshOrdenarHojas: Ordena las hojas dentro de una spreadsheet.
+        - gshProtegerRango: Esta función protege uno o varios rangos de un libro.
+        - gshRenombrarLibro: Renombra un libro de gsheets.
+        - gshValidacionDesplegableRango: crea validaciones de lista desplegable en un rango de celdas.
+    - Lectura / Escritura
+        - gshDescargarHoja: exporta una sola hoja de una gsheet.
+        - gshEscribirHoja: escribe un pandas dataframe en una hoja de google.
+        - gshEscribirRango: escribe una lista de valores en una hoja de google.
+        - gshLeerHoja: lee el contenido de un rango de una hoja de un libro Google.
+        - gshLimpiarHoja: Esta función limpia todo el contenido de una hoja, pero no la elimina.
+        - gshLimpiarRango: Esta función limpia el contenido de un rango dentro de una hoja
+        - gshObtenerIDHoja: devuelve el ID de una hoja concreta dentro de una spreadsheet.
+        - gshObtenerNombreHojas: devuelve los nombres de hojas que tiene un libro de Google.
+        - gshObtenerNombreIdHojas: devuelve un diccionario con los nombres e IDs de hojas que tiene un libro de Google.
+    - Formato
+        - gshBordearRango: formatea los bordes de un rango de celdas.
+        - gshEliminarFormatoRango: Para un rango de celdas, las vuelve a poner con el formato por defecto
+        - gshEliminarFormatosCondicionalesHoja: Elimina todas las reglas de formato condicional de una hoja
+        - gshEliminarRangoProtegido: Elimina uno varios rangos protegidos de un libro.
+        - gshEliminarValidacionRango: elimina todas las fórmulas de validación de un rango de celdas.
+        - gshFormatearHoja: da formato corporativo básico a una hoja.
+        - gshFormatearRango: para un rango de celdas, les da el formato especificado
+        - gshFormatoCondicionalRango: Genera las reglas de formato condicional en un conjunto de rangos. 
+        - gshTraducirColor: Recibe un color RGB y lo traduce a su representación JSON
+        - gshTraducirRango: traduce un rango tipo 'A5:J27' a un objeto tipo GridRange de la API google
+        - gshTraducirRangoInverso: traduce la representación JSON de un rango a formato de una sheet    
     
 - Google Docs: todas estas funciones necesitan el servicio 'docs'
     - gdcCrearDoc: crea un documento de Google Docs.
@@ -56,19 +61,22 @@ Funciones:
     - gdcReemplazarTexto: reemplaza un tag por un texto en un documento de google docs.
     
 - GMail: todas estas funciones necesitan el servicio 'gmail'
-    - ggmCreateDraft: crea un borrador a partir de un mensaje.
-    - ggmCreateMessage: crea un mensaje de gmail.
-    - ggmCreateMessageWithAttachment: crea un mensaje de gmail con un adjunto.
-    - ggmCreateMessageWithAttachments: crea un mensaje de gmail con múltiples adjuntos.
-    - ggmDescargarAdjuntos: recupera y descarga los adjuntos de un correo.
-    - ggmGetPrimaryAddress: devuelve la dirección de mail principal
-    - ggmLeerCorreo: recupera los detalles de un correo
-    - ggmListarCorreos: lista una serie de correos dados unos criterios de búsqueda.
-    - ggmSendMessage: envía un mensaje de gmail.
+    - Envío:
+        - ggmCreateDraft: crea un borrador a partir de un mensaje.
+        - ggmCreateMessage: crea un mensaje de gmail.
+        - ggmCreateMessageWithAttachment: crea un mensaje de gmail con un adjunto.
+        - ggmCreateMessageWithAttachments: crea un mensaje de gmail con múltiples adjuntos.
+        - ggmGetPrimaryAddress: devuelve la dirección de mail principal
+        - ggmSendMessage: envía un mensaje de gmail.
+    - Lectura:
+        - ggmDescargarAdjuntos: recupera y descarga los adjuntos de un correo.
+        - ggmLeerCorreo: recupera los detalles de un correo
+        - ggmListarCorreos: lista una serie de correos dados unos criterios de búsqueda.
     
 - Google Drive: todas estas funciones necesitan el servicio 'drive'
     - gdrBorrarFichero: elimina un fichero de google drive.
     - gdrCambiarPermisos: cambia los permisos de un elemento en drive.
+    - gdrCrearCarpeta: crea una nueva carpeta en Drive.
     - gdrCopiarDocumento: realiza una copia de un documento drive.
     - gdrDescargarFichero: descargará un fichero de google drive en una ruta indicada.
     - gdrFindSharedDrive: busca una unidad compartida por nombre y devuelve su id.
@@ -77,14 +85,17 @@ Funciones:
     - gdrGetFolderId: devuelve los identificadores de las carpetas encontradas en una ruta.
     - gdrListFiles: lista los ficheros contenidos en una carpeta de drive.
     - gdrMoveFile: mueve un fichero de una carpeta a otra.
+    - gdrRenombrarFicheroç
     - gdrSubirVersión: a partir de un fichero local, sube una nueva versión a un fichero ya existente en Google Drive.
     - gdrUploadFile: sube un fichero local a Google Drive.
+    - gdrUploadFolder: sube una carpeta local y todo su contenido a Google Drive.
     - gdrRecursiveFind:  Función que realiza una búsqueda recursiva de todos los ficheros que están
     dentro de una carpeta
     
     
 Versiones:
 ----------
+2022-06-30: Se añaden funciones para crear carpeta, renombrar fichero y subir carpeta.
 2022-04-22: v1.13 Se añeden funciones de formateo de celdas y bordes y búsqueda recursiva en Google Drive
 2022-03-04: v1.12 Se añaden funciones para recuperar versiones de un fichero y para extraer el id a partir de su url
 2021-10-29: v1.11 Se añaden campos cc a los métodos de envío de mail, y los métodos ggmCreateDraft y ggmCreateMessageWithAttachments
@@ -900,11 +911,11 @@ def gshLeerHoja(sheets_service, spreadsheetId, nombreHoja, rango = None, header 
         if header:
             cols = values[0]
             data = values[1:]
-            len_data = max([len(fila) for fila in data])
+            len_data = max([len(fila) for fila in data] + [0])
             while len(cols)<len_data:
                 cols.append('')
                 
-            while len(data[0])<len(cols):
+            while len(data)>0 and len(data[0])<len(cols):
                 data[0].append(None)
                 
             df = pd.DataFrame.from_records(data=data, columns = cols)
@@ -3455,6 +3466,33 @@ def gdrCopiarDocumento(drive_service, fileId, nuevotitulo):
     #document_copy_id = drive_response.get('id')
     
     return drive_response
+
+#%%
+def gdrCrearCarpeta(drive_service, nombre, padreId = None):
+    """
+    Función que genera una nueva carpeta en Drive.
+    Parámetros:
+        drive_service -- Servicio con permisos para google drive.
+        nombre        -- (str) Nombre de la nueva carpeta
+        padreId       -- (str) Identificador de la carpeta padre. default. None para crear en el raíz.
+    Devuelve:
+        (diccionario) Resupesta del servicio. Si ha tenido éxito, en la clave 'id' estará el identificador de la carpeta nueva en Drive.
+    """
+    if nombre is None or nombre.strip() == '':
+        print('No se puede crear una carpeta sin nombre.')
+        return None
+    
+    file_metadata = {
+        'name': nombre,
+        'mimeType': 'application/vnd.google-apps.folder'
+    }
+    if padreId:
+        file_metadata['parents'] = [padreId]
+
+    drive_response = drive_service.files().create(body=file_metadata, fields='id', supportsAllDrives=True).execute()
+    
+    return drive_response
+
 #%%
 def gdrDescargarFichero(drive_service, fileId, rutaDescarga = None, mimeType = None, sobreescribir = False, logs = True, sharedDrive = False):
     """
@@ -3747,7 +3785,7 @@ def gdrListFiles(drive_service, folderId=None, folderPath=None, sharedDrive = Fa
     Lista los ficheros contenidos en una carpeta de drive.
     Parámetros:
         drive_service -- Objeto servicio con permisos de lectura en Google Drive. Se obtiene con el método connect.
-        folderId        -- (str) Identificador de la carpeta.
+        folderId        -- (str) Identificador de la carpeta. '' Para el raíz.
         folderPath      -- (str) Ruta que buscar si folderId = None.
         sharedDrive   -- (bool) default False. Indica si debe listar ficheros de una unidad compartida
         trashed       -- (bool) default False. Indica si debe listar ficheros eliminados
@@ -3769,6 +3807,9 @@ def gdrListFiles(drive_service, folderId=None, folderPath=None, sharedDrive = Fa
             print('Error. No se encuentra la ruta.')
             return None
         folderId = fids[-1][1]
+    
+    if folderId == '':
+        folderId = gdrGetFileProperties(drive_service, fileId='root')['id']
     #Si es el raíz, buscamos en mi unidad
     q = "'" + folderId + "' in parents"
     if not trashed:
@@ -3834,6 +3875,62 @@ def gdrMoveFile(drive_service, fileId, destinationId=None, destinationPath=None,
         ).execute()
     return file
                 
+#%%
+def gdrRecursiveFind(drive_service, folderId, ruta = None):
+    """
+    Función que realiza una búsqueda recursiva de todos los ficheros que están
+    dentro de una carpeta
+    Parámetros:
+        drive_service -- Servicio con permisos para google drive.
+        folderId      -- (str) id de la carpeta donde buscar los ficheros
+    Devuelve un dataframe pandas con la relación de ficheros encontrados: tipo de fichero (kind),
+    identificador de fichero (id), nombre de fichero (name), mimeType, teamDriveId, driveIdd
+    """
+    df = pd.DataFrame()
+
+    q = "'" + folderId + "' in parents"
+    nombre_carpeta = gdrGetFileProperties(drive_service, fileId=folderId, sharedDrive = True)['name']
+
+    for o in drive_service.files().list(q = q, supportsAllDrives=True, includeItemsFromAllDrives=True).execute()['files']:
+
+
+        if o['mimeType'] == 'application/vnd.google-apps.folder':
+
+            df = pd.concat([df,
+                            gdrRecursiveFind(drive_service, o['id'],
+                            nombre_carpeta + '/' + o['name'])])
+
+        else:
+            o['ruta'] = ruta
+            nueva_fila = pd.Series(o).to_frame().T
+            df = pd.concat([df, nueva_fila])
+
+    return df.reset_index(drop = True)
+
+#%%
+def gdrRenombrarFichero(drive_service, file_id, nuevo_nombre):	
+    """
+    Función que renombra un fichero dentro del Drive.
+    Parámetros:
+        drive_service -- Servicio con permisos para google drive.
+        file_id       -- (str) Identificador del fichero a renombrar
+        new_title     -- (str) Nuevo Nombre del fichero.
+    Devuelve:
+        updated_file
+    """
+    if nuevo_nombre is None or nuevo_nombre.strip() == '':
+        print('No puedes dar un nombre vacío')
+        return None
+    
+    body={'name' : nuevo_nombre}
+    
+    updatedFile = drive_service.files().update(
+        fileId            = file_id,
+        body              = body,
+        supportsAllDrives = True
+     ).execute()
+    return updatedFile
+
 #%%
 def gdrSubirVersion(drive_service, idDriveFile, filename, mimetype=None, nuevoNombre = None, nuevaDescripcion = None):
     """
@@ -3916,37 +4013,100 @@ def gdrUploadFile(drive_service, filename, mimetype=None):
         supportsAllDrives=True
     ).execute()
     return file
-#%%
 
 #%%
-def gdrRecursiveFind(drive_service, folderId, ruta = None):
+def gdrUploadFolder(drive_service, carpeta_local, padreId=None, recursivo = False, incluir_raiz=True, subirVersion=True, log=True):
     """
-    Función que realiza una búsqueda recursiva de todos los ficheros que están
-    dentro de una carpeta
+    Función que sube el contenido completo de una carpeta local a Google Drive
     Parámetros:
         drive_service -- Servicio con permisos para google drive.
-        folderId      -- (str) id de la carpeta donde buscar los ficheros
-    Devuelve un dataframe pandas con la relación de ficheros encontrados: tipo de fichero (kind),
-    identificador de fichero (id), nombre de fichero (name), mimeType, teamDriveId, driveIdd
+        carpeta_local -- (str) ruta de la carpeta cuyo contenido se desea subir
+        padreId       -- (str) identificador en drive de la carpeta donde se quiere colgar. Por defecto None, lo deja en mi unidad.
+        recursivo     -- (bool) por defecto False. Indica si debe subir también subcarpetas.
+        incluir_raiz  -- (bool) por defecto True. Indica si el contenido se debe volcar en una nueva carpeta dentro de la padre.
+        subirVersion  -- (bool) por defecto True. Indica si debe actualizar versión de ficheros que ya encuentre subidos
+        log           -- (bool) por defecto False. Indica si debe sacar por pantalla el progreso de la subida
+    Devuelve diccionario. Si la subida ha tenido éxito, la lista de ficheros subidos.
     """
-    df = pd.DataFrame()
+    import os
 
-    q = "'" + folderId + "' in parents"
-    nombre_carpeta = gdrGetFileProperties(drive_service, fileId=folderId, sharedDrive = True)['name']
-
-    for o in drive_service.files().list(q = q, supportsAllDrives=True, includeItemsFromAllDrives=True).execute()['files']:
-
-
-        if o['mimeType'] == 'application/vnd.google-apps.folder':
-
-            df = pd.concat([df,
-                            gdrRecursiveFind(drive_service, o['id'],
-                            nombre_carpeta + '/' + o['name'])])
-
+    if carpeta_local == None or carpeta_local.strip() == '':
+        print('Necesito una carpeta')
+        return None
+   
+    try:
+        #Si se proporciona un padre, se comprueba que exista
+        if padreId and padreId.strip() != '':
+            gdrGetFileProperties(drive_service, padreId, sharedDrive=True) 
+        #Si es el raíz, colocamos su id
+        if padreId is None or padreId.strip() == '':
+            padreId = gdrGetFileProperties(drive_service, 'root')['id']
+    except:
+        print('No se ha podido encontrar la carpeta padre')
+        return None
+    
+    creados = []
+    errores = []
+    actualizados = []
+    #Si hay que incluir la raíz, se genera la carpeta en drive y se apunta el nuevo padreId
+    if incluir_raiz:
+        try:
+            crearPadre = True
+            if subirVersion:
+                #Sacamos el listado de ficheros de la carpeta a la que hay que subir
+                actuales = gdrListFiles(drive_service, padreId)
+                #Buscamos el nombre de la carpeta en el listado
+                for f in actuales:
+                    if f['name'] == os.path.basename(os.path.normpath(carpeta_local)) and f['mimeType'] == 'application/vnd.google-apps.folder':
+                        padreId = f['id']
+                        crearPadre = False
+                        break
+            if crearPadre:
+                padreId = gdrCrearCarpeta(
+                    drive_service, 
+                    nombre=os.path.basename(os.path.normpath(carpeta_local)), 
+                    padreId=padreId
+                )['id']
+                creados.append({'local': carpeta_local, 'drive_id':padreId, 'es_carpeta':True})
+        except Exception as err:
+            errores.append({'local': carpeta_local, 'error':err, 'es_carpeta':True})
+        
+    if subirVersion:
+        #Sacamos el listado de ficheros de la carpeta a la que hay que subir
+        actuales = gdrListFiles(drive_service, padreId)
+        #Colocamos los ficheros actuales en una lista de pares nombre-id para encontrarlos más fácilmente
+        actuales = {x['name']:x['id'] for x in actuales if x['mimeType']!='application/vnd.google-apps.folder'}
+    else:
+        actuales = {}
+    #Por cada fichero de la carpeta, habrá que subirlo
+    for fichero in os.scandir(carpeta_local):
+        #Si el fichero es una subcarpeta y está la recursión activada, la subimos.
+        if fichero.is_dir():
+            if recursivo:
+                if log: 
+                    print('Subiendo', fichero.path)
+                try:
+                    resultado = gdrUploadFolder(drive_service, fichero.path, padreId = padreId, recursivo = True, incluir_raiz=True, subirVersion = subirVersion, log=log)
+                    creados      += resultado['creados']
+                    actualizados += resultado['actualizados']
+                    errores      += resultado['errores']
+                except Exception as err:
+                    errores.append({'local': fichero.path, 'error':err, 'es_carpeta':True})
         else:
-            o['ruta'] = ruta
-            nueva_fila = pd.Series(o).to_frame().T
-            df = pd.concat([df, nueva_fila])
+            if log: 
+                print('Subiendo', fichero.path)
+            try:
+                if subirVersion and fichero.name in actuales:
+                    subida = gdrSubirVersion(drive_service, idDriveFile=actuales[fichero.name], filename=fichero.path)
+                    actualizados.append({'local':fichero.path, 'drive_id':actuales[fichero.name], 'es_carpeta':False})
+                else:
+                    subida = gdrUploadFile(drive_service, fichero.path)
+                    gdrMoveFile(drive_service, subida['id'], padreId, action='move', sharedDrive=True)
+                    creados.append({'local': fichero.path, 'drive_id':subida['id'], 'es_carpeta':False})
+            except Exception as err:
+                errores.append({'local': fichero.path, 'error':err, 'es_carpeta':False})
+        
+    return {'creados': creados, 'actualizados': actualizados, 'errores':errores}
 
-    return df.reset_index(drop = True)
+
 #%%
