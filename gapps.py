@@ -40,6 +40,8 @@ Funciones:
         - gshObtenerIDHoja: devuelve el ID de una hoja concreta dentro de una spreadsheet.
         - gshObtenerNombreHojas: devuelve los nombres de hojas que tiene un libro de Google.
         - gshObtenerNombreIdHojas: devuelve un diccionario con los nombres e IDs de hojas que tiene un libro de Google.
+        - gshInsertarFilasColumnas: Esta función inserta filas o columnas a una hoja de google sheets
+        - gshEliminarFilasColumnas: Esta función elimina filas o columnas de una hoja de google sheets
     - Formato
         - gshBordearRango: formatea los bordes de un rango de celdas.
         - gshEliminarFormatoRango: Para un rango de celdas, las vuelve a poner con el formato por defecto
@@ -91,10 +93,15 @@ Funciones:
     - gdrUploadFolder: sube una carpeta local y todo su contenido a Google Drive.
     - gdrRecursiveFind:  Función que realiza una búsqueda recursiva de todos los ficheros que están
     dentro de una carpeta
+
+- Google Slides: todas estas funciones necesistan el service slides
+    - gslReemplazarTexto: reemplaza un tag por un texto en un documento de google slides
     
     
 Versiones:
 ----------
+2022-07-06: v.1.4.1 Resueltos dos bugs en función connect
+2022-07-06: v.1.4 Función de reemplezo en Google Slides
 2022-06-30: Se añaden funciones para crear carpeta, renombrar fichero y subir carpeta.
 2022-04-22: v1.13 Se añeden funciones de formateo de celdas y bordes y búsqueda recursiva en Google Drive
 2022-03-04: v1.12 Se añaden funciones para recuperar versiones de un fichero y para extraer el id a partir de su url
@@ -180,8 +187,10 @@ def str2ascii(cadena):
         'é':'e',
         'í':'i',
         'ó':'o',
-        'u':'u',
-        'ñ':'n'
+        'ú':'u',
+        'ñ':'n',
+        'ç':'c',
+        'ü':'u'
     }
     ls = list(table.keys())
     for l in ls:
@@ -252,7 +261,7 @@ def getUserPwd(titulo = 'Introduzca usuario y clave' , user=None):
 
 
 #%%  
-def connect(ruta_credenciales = './', archivo_credenciales = 'credentials.json', ruta_token = None, archivo_token='token.pickle', services=[], port=8080):
+def connect(ruta_credenciales = './', archivo_credenciales = 'credentials.json', ruta_token = None, archivo_token='token.pickle', services=[], port=0):
 
     """Shows basic usage of the Sheets API.
     Establece una conexión con Google para poder leer excels de Drive.
@@ -269,6 +278,9 @@ def connect(ruta_credenciales = './', archivo_credenciales = 'credentials.json',
     Posibles claves: 'sheets', 'drive', 'docs', 'gmail'
     """
     
+    if ruta_credenciales.strip() != '' and (not (ruta_credenciales.endswith('/') or ruta_credenciales.endswith('\\'))):
+        ruta_credenciales = ruta_credenciales + '/'
+
     if ruta_token is None:
         ruta_token = ruta_credenciales
         
@@ -282,7 +294,8 @@ def connect(ruta_credenciales = './', archivo_credenciales = 'credentials.json',
             SCOPES.append('https://www.googleapis.com/auth/drive')
             SCOPES.append('https://www.googleapis.com/auth/drive.appdata')
             SCOPES.append('https://www.googleapis.com/auth/drive.metadata')
-
+        elif service == 'slides':
+            SCOPES.append('https://www.googleapis.com/auth/presentations')
         elif service == 'docs':
             SCOPES.append('https://www.googleapis.com/auth/docs')
         elif service == 'gmail':
@@ -292,9 +305,6 @@ def connect(ruta_credenciales = './', archivo_credenciales = 'credentials.json',
         elif service == 'drive.readonly':
             SCOPES.append('https://www.googleapis.com/auth/drive.readonly')
 
-    if not (ruta_credenciales.endswith('/') or ruta_credenciales.endswith('\\')):
-        ruta_credenciales = ruta_credenciales + '/'
-        
     creds = None
     # The file token.pickle stores the user's access and refresh tokens, and is
     # created automatically when the authorization flow completes for the first
@@ -329,6 +339,8 @@ def connect(ruta_credenciales = './', archivo_credenciales = 'credentials.json',
                 service_dict[service] = build('drive.readonly', 'v3', credentials=creds)
             elif service == 'script':
                 service_dict[service] = build('script', 'v1', credentials=creds)
+            elif service == 'slides':
+                service_dict[service] = build('slides', 'v1', credentials=creds)
         except Exception as err:
             service_dict[service] = 'Error: ' + str(err)
     return service_dict
@@ -858,6 +870,284 @@ def gshLimpiarRango(sheets_service, spreadsheetId, nombreHoja, rango=None):
     result = sheet.values().clear(spreadsheetId = spreadsheetId, range = "'"+nombreHoja+"'!"+rango).execute()
 
     return result
+
+
+
+#%%
+
+def gshInsertarFilasColumnas(sheets_service, spreadsheetId, nombreHoja, idHoja=None, insertarFilas=True, despuesDe=None, numInsertar=1, copiarFormatoAnterior = True):
+    """
+    Esta función inserta filas o columnas a una hoja de google sheets
+
+    Parameters
+    ----------
+    sheets_service : service
+        Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
+    spreadsheetId : str
+        Identificador del libro en Google Drive.
+    nombreHoja : str
+        Nombre de la hoja en la que se desea escribir dentro del libro. Si el parámetro idHoja viene
+        informado, este parámetro se ingnora.
+    idHoja : int, optional
+        Si se informa el id de la hoja a escribir se ignora el nombre de hoja. The default is None.
+    insertarFilas : bool, optional
+        - True: Inserta filas
+        - False: inserta columnas 
+        The default is True.
+    despuesDe : int, list, optional
+        Índice o lista de índices (lista de int) que marcan después de qué fila/columna se quieren insertar
+        las nuevas filas/columnas. Las inserciones se realizan de tal modo que los números de fila/columna 
+        se refieren siempre a las posiciones en la hoja original, antes de hacer ninguna inserción. No debe haber
+        posiciones repetidas. Ejemplo: [7, 1, 18] <-- Bien.           [5, 12, 5, 6] <-- Mal. 5 repetido. 
+        - 0: las filas/columnas se insertan al principio de la hoja. 
+        - número>0: Las filas/columnas se insertan a continuación de esa. 
+                    Ejemplo: despuesDe=1 => la fila 1 original se mantiene donde estaba y se crea una nueva fila
+                             en la posición 2 desplazando lo que había en la posición 2 y todo lo demás hacia abajo
+        - None: Las filas/columnas se insertan al final de la HOJA. Ojo: no después de la última fila/col rellena, sino
+                al final del todo de la hoja. Si se quiere insertar tras la última rellena habrá que leer la hoja, 
+                calcular sus dimensiones y pasar despuesDe con el valor de la última fila/columna rellenas.
+        The default is None.
+    numInsertar : int, list, optional
+        Debe tener la misma dimensión que 'despuesDe'. Para cada punto en el que se va a hacer una inserción,
+        indica el número de filas/columnas que se quieren insertar. 
+        The default is 1.
+    copiarFormatoAnterior : bool, list, optional
+        Si 'despuesDe' y 'numInsertar' son int se debe pasar un bool.
+        Si 'despuesDe' y 'numInsertar' son listas se puede pasar un bool (aplicará el mismo valor para todas las inserciones)
+        o una lista con la misma longitud y aplicará a cada inserción su valor.  
+        - True:  la nueva fila/columna hereda el formato de la anterior. No válido si insertamos en posición 0.
+        - False: la nueva fila/columna hereda el formato de la posterior
+        The default is True.
+
+    Returns
+    -------
+    res : resultado de la request
+        devuelve el resultado de la request, None en caso de error.
+    """
+    
+    #Revisión de parámetros de la función    
+    if idHoja is None:
+        idHoja = gshObtenerIDHoja(sheets_service, spreadsheetId, nombreHoja )
+    
+    if idHoja is None:
+        print("gshInsertarFilasColumnas: ERROR. No se encuentra la hoja especificada")
+        return None
+    
+    #Si han llamado a la función con despuesDe como entero lo convierto a lista
+    if type(despuesDe)==int:
+        if type(numInsertar)!= int:
+            print("gshInsertarFilasColumnas: ERROR. No coinciden los tipos de dato de 'despuesDe' y 'numInsertar'")
+            return None
+        
+        despuesDe = [despuesDe]
+        numInsertar = [numInsertar]
+    
+    #Si han llamado a la función con despuesDe como lista reviso dimensiones
+    elif type(despuesDe)==list and type(numInsertar)== list:
+        if len(despuesDe) != len(numInsertar):
+            print("gshInsertarFilasColumnas: ERROR. No coinciden las longitudes de 'despuesDe' y 'numInsertar'")
+            return None
+        
+    else:
+        print("gshInsertarFilasColumnas: ERROR. Los parámetros 'despuesDe' y/o 'numInsertar' no son válidos")
+        return None
+            
+    #Reviso si en copiarFormatoAnterior me han dado un bool o una lista
+    if type(copiarFormatoAnterior) == bool:
+        copiarFormatoAnterior = [copiarFormatoAnterior for elto in despuesDe]
+    
+    elif not ( type(copiarFormatoAnterior) == list and len(copiarFormatoAnterior) == len(despuesDe) ):
+        print("gshInsertarFilasColumnas: ERROR. El parámetros 'copiarFormatoAnterior' no es válido")
+        return None 
+    
+    
+    #Junto en un diccionario los datos para asegurarme de recorrerlo en orden inverso:
+    datos_inserciones = {dsp if dsp is not None else 1E20 : {'numInsertar' : numInsertar[i], 'copiarFormatoAnterior':copiarFormatoAnterior[i]} for i, dsp in enumerate(despuesDe)}
+    lista_cols = list(datos_inserciones.keys())
+    lista_cols.sort(reverse=True)
+    
+    
+    #Generar las peticiones
+    if insertarFilas:
+        dimension = 'ROWS'
+    else:
+        dimension = 'COLUMNS'
+        
+    
+    peticiones =  []
+    
+    for col in lista_cols:
+        
+        #Si despuesDe vale None (que hemos convertido a 1E20) --> añadimos al final de la hoja
+        if col == 1E20:
+            req = {'appendDimension': {
+                        'sheetId'    : idHoja,
+                        'dimension'  : dimension,
+                        'length'     : datos_inserciones[col]['numInsertar']
+                        }               
+                   }
+            
+        #Si tenemos un punto concreto donde insertar
+        else:
+            if col<0:
+                print("gshInsertarFilasColumnas: ERROR. Se ha pasado un número menor que 0 en 'despuesDe'")
+                return None 
+            
+            #Si quiero insertar en la posición 0 => no puedo copiar el formato de lo anterior. 
+            if col == 0:
+                datos_inserciones[col]['copiarFormatoAnterior'] = False 
+                
+            req = {'insertDimension': {
+                        'range' : {
+                            'sheetId'    : idHoja,
+                            'dimension'  : dimension,
+                            'startIndex' : col,
+                            'endIndex'   : col + datos_inserciones[col]['numInsertar']
+                            },
+                        'inheritFromBefore' : datos_inserciones[col]['copiarFormatoAnterior']
+                        }                   
+                   }
+        
+        peticiones.append(req)
+    
+    
+            
+    #Finalmente lanzamos la petición
+    try:
+        res = sheets_service.spreadsheets().batchUpdate(
+            spreadsheetId = spreadsheetId,
+            body ={'requests' : peticiones}
+            ).execute()
+    except Exception as e:
+        print ("gshInsertarFilasColumnas: ERROR. La petición de inserción falló")
+        print(e)
+        return None
+    
+    return res
+
+
+#%%
+
+def gshEliminarFilasColumnas(sheets_service, spreadsheetId, nombreHoja, inicioEliminar, idHoja=None, eliminarFilas=True, numEliminar=1):
+    """
+    Esta función elimina filas o columnas de una hoja de google sheets
+
+    Parameters
+    ----------
+    sheets_service : service
+        Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
+        
+    spreadsheetId : str
+        Identificador del libro en Google Drive.
+        
+    nombreHoja : str
+        Nombre de la hoja en la que se desea escribir dentro del libro. Si el parámetro idHoja viene
+        informado, este parámetro se ingnora.
+        
+    inicioEliminar : int, list
+        Índice o lista de índices (lista de int) que marcan qué fila/columna es la primera a eliminar. Base 1. 
+        Las eliminaciones se realizan de tal modo que los números de fila/columna se refieren siempre a las 
+        posiciones en la hoja original, antes de hacer ninguna eliminación. No debe haber posiciones repetidas. 
+        Ejemplos: [7, 1, 18] <-- Bien.     [5, 12, 5, 6] <-- Mal. 5 repetido.        [2, 5, 0]<-- Mal. el 0 no vale
+        
+    idHoja : int, optional
+        Si se informa el id de la hoja a escribir se ignora el nombre de hoja. The default is None.
+        
+    eliminarFilas : bool, optional
+        - True: Elimina filas
+        - False: Elimina columnas 
+        The default is True.
+        
+    numEliminar : int, list, optional
+        Debe tener la misma dimensión que 'inicioEliminar'. Para cada punto en el que se va a hacer una eliminación,
+        indica el número de filas/columnas que se quieren eliminar. 
+        The default is 1.
+
+    Returns
+    -------
+    res : resultado de la request
+        devuelve el resultado de la request, None en caso de error.
+    """
+    
+    #Revisión de parámetros de la función    
+    if idHoja is None:
+        idHoja = gshObtenerIDHoja(sheets_service, spreadsheetId, nombreHoja )
+    
+    if idHoja is None:
+        print("gshEliminarFilasColumnas: ERROR. No se encuentra la hoja especificada")
+        return None
+    
+    #Si han llamado a la función con inicioEliminar como entero lo convierto a lista
+    if type(inicioEliminar)==int:
+        if type(numEliminar)!= int:
+            print("gshEliminarFilasColumnas: ERROR. No coinciden los tipos de dato de 'inicioEliminar' y 'numEliminar'")
+            return None
+        
+        inicioEliminar = [inicioEliminar]
+        numEliminar = [numEliminar]
+    
+    #Si han llamado a la función con inicioEliminar como lista reviso dimensiones
+    elif type(inicioEliminar)==list and type(numEliminar)== list:
+        if len(inicioEliminar) != len(numEliminar):
+            print("gshEliminarFilasColumnas: ERROR. No coinciden las longitudes de 'inicioEliminar' y 'numEliminar'")
+            return None
+        
+    else:
+        print("gshEliminarFilasColumnas: ERROR. Los parámetros 'inicioEliminar' y/o 'numEliminar' no son válidos")
+        return None
+            
+    
+    
+    
+    #Junto en un diccionario los datos para asegurarme de recorrerlo en orden inverso:
+    datos_eliminaciones = {iniElim : numEliminar[i] for i, iniElim in enumerate(inicioEliminar)}
+    lista_cols = list(datos_eliminaciones.keys())
+    lista_cols.sort(reverse=True)
+    
+    
+    #Generar las peticiones
+    if eliminarFilas:
+        dimension = 'ROWS'
+    else:
+        dimension = 'COLUMNS'
+        
+    
+    peticiones =  []
+    
+    for col in lista_cols:            
+        
+        if col <= 0:
+            print("gshEliminarFilasColumnas: ERROR. Se ha pasado un número menor o igual que 0 en 'inicioEliminar'")
+            return None  
+            
+        req = {'deleteDimension': {
+                    'range' : {
+                        'sheetId'    : idHoja,
+                        'dimension'  : dimension,
+                        'startIndex' : col-1, #Para eliminar usa base 0... 
+                        'endIndex'   : col + datos_eliminaciones[col]-1
+                        }
+                    }               
+               }
+        
+        peticiones.append(req)
+    
+    
+            
+    #Finalmente lanzamos la petición
+    try:
+        res = sheets_service.spreadsheets().batchUpdate(
+            spreadsheetId = spreadsheetId,
+            body ={'requests' : peticiones}
+            ).execute()
+    except Exception as e:
+        print ("gshEliminarFilasColumnas: ERROR. La petición de eliminación falló")
+        print(e)
+        return None
+    
+    return res
+
+
 
 
 #%%
@@ -4054,7 +4344,7 @@ def gdrUploadFolder(drive_service, carpeta_local, padreId=None, recursivo = Fals
             crearPadre = True
             if subirVersion:
                 #Sacamos el listado de ficheros de la carpeta a la que hay que subir
-                actuales = gdrListFiles(drive_service, padreId)
+                actuales = gdrListFiles(drive_service, padreId, sharedDrive=True)
                 #Buscamos el nombre de la carpeta en el listado
                 for f in actuales:
                     if f['name'] == os.path.basename(os.path.normpath(carpeta_local)) and f['mimeType'] == 'application/vnd.google-apps.folder':
@@ -4073,7 +4363,7 @@ def gdrUploadFolder(drive_service, carpeta_local, padreId=None, recursivo = Fals
         
     if subirVersion:
         #Sacamos el listado de ficheros de la carpeta a la que hay que subir
-        actuales = gdrListFiles(drive_service, padreId)
+        actuales = gdrListFiles(drive_service, padreId, sharedDrive=True)
         #Colocamos los ficheros actuales en una lista de pares nombre-id para encontrarlos más fácilmente
         actuales = {x['name']:x['id'] for x in actuales if x['mimeType']!='application/vnd.google-apps.folder'}
     else:
@@ -4109,4 +4399,48 @@ def gdrUploadFolder(drive_service, carpeta_local, padreId=None, recursivo = Fals
     return {'creados': creados, 'actualizados': actualizados, 'errores':errores}
 
 
+#%%
+######################################################################################################
+# GOOGLE SLIDES
+######################################################################################################
+def gslReemplazarTexto(slides_service, presentation_id, campos, textos, envolverCampos=True):
+    """
+    Reemplaza un tag por un texto en un documento de google docs.
+    slides_service  -- Servicio de google con permisos para escribir en Google Slides. Se obtiene con el método connect.
+    presentation_id -- (str) identificador del documento que se quiere editar.
+    campos          -- (lista de str) con los campos que se deben buscar en el documento. Un campo debería estar encerrado entre doble llave. Ejemplo: {{campo}}
+    textos          -- (lista de str) ha de ser una variable que contenga un objeto iterable con todos los textos a insertar (str)
+    envolverCampos  -- (boolean) default:True True si quieres añadir automáticamente las llaves a los campos en caso de que no tengan.
+    
+    Más detalles en https://developers.google.com/slides/api
+    """
+    if len(textos) != len(campos):
+        print('Las longitudes de textos y campos deben ser iguales')
+        return None
+    
+    if envolverCampos:
+        for i,campo in enumerate(campos):
+            if not (campo.startswith('{{') and campo.endswith('}}')):
+                campos[i] = '{{' + campo + '}}'
+    
+    requests = []
+    for i, texto in enumerate(textos):
+        requests.append({
+                'replaceAllText': {
+                        'containsText': {
+                                'text': campos[i],
+                                'matchCase': 'true'
+                        },
+                        'replaceText' : texto
+                }
+        })
+
+    body = {
+            'requests': requests
+        }
+
+    result = slides_service.presentations().batchUpdate(
+            presentationId=presentation_id, body=body).execute()
+
+    return result
 #%%
