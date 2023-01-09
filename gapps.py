@@ -68,6 +68,7 @@ Funciones:
         - ggmCreateMessage: crea un mensaje de gmail.
         - ggmCreateMessageWithAttachment: crea un mensaje de gmail con un adjunto.
         - ggmCreateMessageWithAttachments: crea un mensaje de gmail con múltiples adjuntos.
+        - ggmAddAttachmentsToMessage: Añade archivos adjuntos a un mensaje de gmail existente.
         - ggmGetPrimaryAddress: devuelve la dirección de mail principal
         - ggmSendMessage: envía un mensaje de gmail.
     - Lectura:
@@ -3109,18 +3110,23 @@ def ggmCreateMessage(to, subject='', message_text='', sender='me', replyTo = Non
     import base64
     from email.mime.text import MIMEText
     
-    if html:
-        message = MIMEText(message_text, 'html')
-    else:
-        message = MIMEText(message_text)
-    message['To'] = to
+    message = MIMEMultipart()
+    message['To'] = str(to)
     message['From'] = str2ascii(sender)
-    message['Subject'] = subject
+    message['Subject'] = str(subject)
+
     if replyTo:
-        message.add_header('Reply-To', replyTo)
+        message.add_header('Reply-To', str(replyTo))
     if cc:
         message.add_header('Cc', str(cc))
 
+
+    if html:
+        msg = MIMEText(message_text, 'html')
+    else:
+        msg = MIMEText(message_text)
+    message.attach(msg)
+    
     b64_bytes = base64.urlsafe_b64encode(message.as_bytes())
     b64_string = b64_bytes.decode()
     body = {'raw': b64_string}
@@ -3284,6 +3290,72 @@ def ggmCreateMessageWithAttachments(to, ficheros, subject='', message_text='', s
     b64_string = b64_bytes.decode()
     body = {'raw': b64_string}
     return body
+
+
+#%%
+def ggmAddAttachmentsToMessage(emailMessage, ficheros):
+    """Add an attachment to an alredy existing email message.
+
+    Args:
+    - emailMessage: (base64url encoded email object) Email creado con alguna de las funciones:
+        ggmCreateMessage, ggmCreateMessageWithAttachment o ggmCreateMessageWithAttachments
+    - ficheros: (list) Lista que contiene los nombres (con su ruta, si procede) de los ficheros que se desean adjuntar.
+    
+    Returns:
+    An object containing a base64url encoded email object.
+    """
+    import base64
+    import email
+    from email.mime.audio import MIMEAudio
+    from email.mime.base import MIMEBase
+    from email.mime.image import MIMEImage
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+    from email.encoders import encode_base64
+    import mimetypes
+    import os
+    
+    
+    b64_string = emailMessage['raw']
+    b64_bytes = b64_string.encode()
+    message = email.message_from_bytes(base64.urlsafe_b64decode(b64_bytes))
+    
+    for fichero in ficheros:
+        nombre_fichero = os.path.split(fichero)[-1]
+        content_type, encoding = mimetypes.guess_type(fichero)
+    
+        if content_type is None or encoding is not None:
+            content_type = 'application/octet-stream'
+        
+        main_type, sub_type = content_type.split('/', 1)
+        if main_type == 'text':
+            fp = open(fichero, 'rb')
+            msg = MIMEText(fp.read(), _subtype=sub_type)
+            fp.close()
+        elif main_type == 'image':
+            fp = open(fichero, 'rb')
+            msg = MIMEImage(fp.read(), _subtype=sub_type)
+            fp.close()
+        elif main_type == 'audio':
+            fp = open(fichero, 'rb')
+            msg = MIMEAudio(fp.read(), _subtype=sub_type)
+            fp.close()
+        else:
+            fp = open(fichero, 'rb')
+            msg = MIMEBase(main_type, sub_type)
+            msg.set_payload(fp.read())
+            encode_base64(msg)
+            fp.close()
+    
+        msg.add_header('Content-Disposition', 'attachment', filename=nombre_fichero)
+        message.attach(msg)
+
+    b64_bytes = base64.urlsafe_b64encode(message.as_bytes())
+    b64_string = b64_bytes.decode()
+    body = {'raw': b64_string}
+    return body
+
+
 
 #%%
 def ggmDescargarAdjuntos(gmail_service, mensaje=None, idmensaje=None, carpeta_descarga=None):
