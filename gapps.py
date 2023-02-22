@@ -95,9 +95,17 @@ Funciones:
     - gdrRecursiveFind:  Función que realiza una búsqueda recursiva de todos los ficheros que están
     dentro de una carpeta
 
-- Google Slides: todas estas funciones necesistan el service slides
+- Google Slides: todas estas funciones necesitan el service slides
     - gslReemplazarTexto: reemplaza un tag por un texto en un documento de google slides
     
+- Google Groups: todas estas funciones necesitan el servicio groups
+    - ggrListarMiembros: recupera los miembros de un google group
+    
+- Google Calendar: todas estas funciones necesitan el servicio calendar
+    - gclCrearEvento       : Crea un evento en un calendario
+    - gclListarCalendarios : Lista los calendarios disponibles
+    - gclListarEventos     : Lista una serie de eventos según búsqueda
+    - gclObtenerCalendario : Recupera los detalles de un calendario en particular
     
 Versiones:
 ----------
@@ -279,6 +287,12 @@ def connect(ruta_credenciales = './', archivo_credenciales = 'credentials.json',
     Posibles claves: 'sheets', 'drive', 'docs', 'gmail'
     """
     
+    import os
+    from google_auth_oauthlib.flow import InstalledAppFlow
+    from googleapiclient.discovery import build
+    from google.auth.transport.requests import Request
+    import pickle
+
     if ruta_credenciales.strip() != '' and (not (ruta_credenciales.endswith('/') or ruta_credenciales.endswith('\\'))):
         ruta_credenciales = ruta_credenciales + '/'
 
@@ -305,6 +319,10 @@ def connect(ruta_credenciales = './', archivo_credenciales = 'credentials.json',
             SCOPES.append('https://www.googleapis.com/auth/gmail.send')
         elif service == 'drive.readonly':
             SCOPES.append('https://www.googleapis.com/auth/drive.readonly')
+        elif service == 'groups':
+            SCOPES.append('https://www.googleapis.com/auth/cloud-identity.groups')
+        elif service == 'calendar':
+            SCOPES.append('https://www.googleapis.com/auth/calendar')
 
     creds = None
     # The file token.pickle stores the user's access and refresh tokens, and is
@@ -342,6 +360,10 @@ def connect(ruta_credenciales = './', archivo_credenciales = 'credentials.json',
                 service_dict[service] = build('script', 'v1', credentials=creds)
             elif service == 'slides':
                 service_dict[service] = build('slides', 'v1', credentials=creds)
+            elif service == 'groups':
+                service_dict[service] = build('cloudidentity', 'v1', credentials=creds)
+            elif service == 'calendar':
+                service_dict[service] = build('calendar', 'v3', credentials=creds)
         except Exception as err:
             service_dict[service] = 'Error: ' + str(err)
     return service_dict
@@ -370,7 +392,7 @@ def comprobarMailsDominios (mails_destinatarios, dominios_aceptados):
         return False
     
     #ahora al menos debería tener 1 dirección de mail. Para cada mail que venga comprobamos su dominio.
-    lista_destinatarios = mails_destinatarios.split(',')
+    lista_destinatarios = mails_destinatarios.replace(' ','').split(',')
         
     for destinatario in lista_destinatarios:
         try:
@@ -4515,4 +4537,250 @@ def gslReemplazarTexto(slides_service, presentation_id, campos, textos, envolver
             presentationId=presentation_id, body=body).execute()
 
     return result
+
 #%%
+######################################################################################################
+# GOOGLE GROUPS
+######################################################################################################
+def ggrListarMiembros(groups_service, group_mail:str):
+    '''
+    Recupera los miembros de un google group
+    
+    :param groups_service -- (googleapiclient.discovery.Resource) Servicio de google con permisos para escribir en Google Slides. Se obtiene con el método connect.
+    :param group_mail     -- (str) Correo electrónico del grupo
+    
+    :return: pandas dataframe con la información de los miembros del grupo. None si hay error.
+    '''
+    import pandas as pd
+    
+    param = "&groupKey.id=" + group_mail
+    try:
+        lookup_group_name_request = groups_service.groups().lookup()
+        lookup_group_name_request.uri += param
+        lookup_group_name_response = lookup_group_name_request.execute()
+        group_name = lookup_group_name_response.get("name")
+        # List memberships
+        response = groups_service.groups().memberships().list(parent=group_name).execute()
+        display(response)
+        df = pd.DataFrame.from_dict(response['memberships'])
+        df['email']      = df['preferredMemberKey'].apply(lambda x: x['id'])
+        df['member']     = df['roles'].apply(lambda x: True if 'MEMBER'  in str(x) else False)
+        df['admin']      = df['roles'].apply(lambda x: True if 'MANAGER' in str(x) else False)
+        df['owner']      = df['roles'].apply(lambda x: True if 'OWNER'   in str(x) else False)
+        df['group']      = group_mail
+        return df[['group', 'email', 'member', 'admin', 'owner']]
+    except Exception as e:
+        print(e)
+        return None
+    
+#%%
+######################################################################################################
+# GOOGLE CALENDAR
+######################################################################################################
+#%%
+def gclCrearEvento(calendar_service, calendarId:str = 'primary', titulo:str='', inicio=None, fin=None, duracion=50, detalles=None, invitados:[str]=[], opcionales:[str]=[], adjuntos:[str]=[], drive_service=None, video:bool=False, notificar:bool=False):
+    '''
+    Crear un evento en un calendario
+    https://developers.google.com/calendar/api/v3/reference/events/insert?hl=es-419
+    
+    :param calendar_service -- (googleapiclient.discovery.Resource) Servicio de google con permisos para escribir en Google Slides. Se obtiene con el método connect.
+    :param calendarId       -- (str) Especifica el calendario en el que buscar eventos. Por defecto, busca en el calendario principal.
+    :param titulo           -- (str) Título del evento
+    :param inicio           -- (datetime, str) Fecha y hora de inicio. Si es str, en formato yyyy-mm-dd hh:mm:ss
+    :param fin              -- (datetime, str) Fecha y hora de fin. Si es str, en formato yyyy-mm-ddThh:mm:ss
+    :param duracion         -- (int) Duración en minutos del evento. Ignorado si se informa fin. O fin o duración deben informarse.
+    :param detalles         -- (str) Descripción larga del evento
+    :param invitados        -- (list:str) Lista con correos electrónicos de invitados obligatorios
+    :param opcionales       -- (list:str) Lista con correos electrónicos de invitados opcionales
+    :param adjuntos         -- (list:str) Lista con urls de adjuntos.
+    :param drive_service    -- (googleapiclient.discovery.Resource) Servicio de google con permisos para subir ficheros a Drive. Necesario si se van a subir adjuntos.
+    :param video            -- (bool) True si se desea añadir Google Meet al evento (por defecto False).
+    :param notificar        -- (bool) True si se desea enviar notificación del evento a los asistentes (por defecto False).
+    
+    :return: dict con la información del evento creado. None si hay error.
+    '''
+    try:
+        import datetime
+        import re
+        
+        evento = {}
+        
+        tz = gclObtenerCalendario(calendar_service, calendarId)['timeZone']
+        
+        evento['summary'] = titulo
+        evento['description'] = detalles
+        
+        if inicio is None:
+            inicio = datetime.datetime.today()
+    
+        #Vamos a tener la variable inicio en formato datetime e iniciostr en formato str
+        #La segunda la usamos para la llamada, y la primera, para calcular la hora de fin si nos informan la duración.
+        if type(inicio) == datetime.datetime:
+            iniciostr = inicio.strftime('%Y-%m-%dT%H:%M:%S')
+        elif type(inicio) == str:
+            if not re.match(r'\d{4}\-\d{2}\-\d{2}T\d{2}:\d{2}:\d{2}', inicio):
+                raise Exception('La hora de inicio no está expresada como yyyy-mm-ddTHH:MM:SS')
+            else:
+                iniciostr = inicio
+                inicio = datetime.datetime.strptime(inicio, '%Y-%m-%dT%H:%M:%S')
+        evento['start'] = {'dateTime' : iniciostr, 'timeZone': tz}
+    
+        if fin is None and duracion is None:
+            raise Exception('Se debe especificar o bien hora de fin, o bien duración del evento.')
+        elif fin is None and duracion is not None:
+            fin = inicio + datetime.timedelta(minutes=duracion)
+            
+        if type(fin) == datetime.datetime:
+            finstr = fin.strftime('%Y-%m-%dT%H:%M:%S')
+        elif type(fin) == str:
+            if not re.match(r'\d{4}\-\d{2}\-\d{2}T\d{2}:\d{2}:\d{2}', fin):
+                raise Exception('La hora de fin no está expresada como yyyy-mm-ddTHH:MM:SS')
+        evento['end'] = {'dateTime' : finstr, 'timeZone': tz}
+    
+        evento['attendees'] = [{'email': persona} for persona in invitados] + [{'email': persona, 'optional':True} for persona in opcionales]
+        
+        evento['attachments'] = []
+        for i, fichero in enumerate(adjuntos):
+            if fichero.startswith('http'):
+                try:
+                    propiedades = gdrGetFileProperties(drive_service, getDriveIdFromURL(fichero))
+                    evento['attachments'].append({
+                        'fileUrl' :propiedades['webContentLink'], 
+                        'title'   :propiedades['name'],
+                        'mimeType':propiedades['mimeType'],
+                        'iconLink':propiedades['iconLink']
+                    })
+                except:
+                    evento['attachments'].append({'fileUrl':fichero, 'title':'Adjunto #' + str(i)})
+            else:
+                fichero = gdrUploadFile(drive_service, fichero)
+                propiedades = gdrGetFileProperties(drive_service, fichero['id'])
+                evento['attachments'].append({
+                    'fileUrl' :propiedades['webContentLink'], 
+                    'title'   :propiedades['name'],
+                    'mimeType':propiedades['mimeType'],
+                    'iconLink':propiedades['iconLink']
+                })
+        
+        if video:
+            conferenceDataVersion = 1
+            evento['conferenceData'] = {
+                'createRequest': {
+                    'requestId'            : str(datetime.datetime.today().timestamp()),
+                    'conferenceSolutionKey': {'type':'hangoutsMeet'}
+                }
+            }
+        else:
+            conferenceDataVersion = 0
+        
+        if notificar:
+            sendUpdates = 'all'
+        else:
+            sendUpdates = 'none'
+        
+        evento = calendar_service.events().insert(
+            calendarId            = calendarId, 
+            body                  = evento, 
+            conferenceDataVersion = conferenceDataVersion, 
+            supportsAttachments   = True,
+            sendUpdates           = sendUpdates 
+        ).execute()
+        return evento
+    except:
+        return None
+    
+#%%
+def gclListarCalendarios(calendar_service, primary:bool=True, minAccessRole:str='writer', showDeleted:bool=False, showHidden:bool=False):
+    '''
+    Lista los calendarios del usuario
+    
+    :param calendar_service -- (googleapiclient.discovery.Resource) Servicio de google con permisos para escribir en Google Slides. Se obtiene con el método connect.
+    :param primary          -- (boolean) Indica si debe recuperar solamente el calendario principal (por defecto, True)
+    :param minAccessRole    -- (str) Función de acceso mínimo del usuario en las entradas que se muestran. Opcional. El valor predeterminado es 'writer'.
+                               Los valores aceptables son los siguientes:
+                               "freeBusyReader": El usuario puede leer información de disponible/ocupado.
+                               "owner": El usuario puede leer y modificar eventos y listas de control de acceso.
+                               "reader": El usuario puede leer eventos que no son privados.
+                               "writer": El usuario puede leer y modificar eventos.
+    :param showDeleted      -- (boolean) Indica si debe recuperar calendarios eliminados (por defecto, False).
+    :param showHidden       -- (boolean) Indica si deber recuperar calendarios ocultos (por defecto, False).
+    
+    :return: pandas dataframe con la información de los calendarios del grupo. None si hay error.
+    '''
+    import pandas as pd
+    
+    calendarios = pd.DataFrame()
+    try:
+        page_token = None
+        while True:
+            calendar_list = calendar_service.calendarList().list(
+                pageToken     = page_token,
+                minAccessRole = minAccessRole,
+                showDeleted   = showDeleted
+            ).execute()
+            calendarios = pd.concat([calendarios, pd.DataFrame.from_dict(calendar_list['items'])])
+            page_token = calendar_list.get('nextPageToken')
+            if not page_token:
+                break
+        calendarios = calendarios.drop(columns='kind')
+        if primary:
+            calendarios = calendarios.loc[calendarios.primary == True]
+    except Exception as e:
+        print(e)
+    return calendarios
+
+#%%
+def gclListarEventos(calendar_service, calendarId:str = 'primary', busqueda:str=None, **resto_parametros):
+    '''
+    Busca un evento en un calendario
+    https://developers.google.com/calendar/api/v3/reference/events/list?hl=es-419
+    
+    :param calendar_service -- (googleapiclient.discovery.Resource) Servicio de google con permisos para escribir en Google Slides. Se obtiene con el método connect.
+    :param calendarId       -- (str) Especifica el calendario en el que buscar eventos. Por defecto, busca en el calendario principal.
+    :param busqueda         -- (str) Términos de búsqueda gratuita de texto para encontrar eventos que coincidan con estos términos en los siguientes campos: summary, description, location, displayName de asistentes y email de asistente
+    :param **resto_parametros -- Resto de parámetros admitidos por la API en la web de la misma.
+    
+    :return: pandas dataframe con la información de los calendarios del grupo. None si hay error.
+    '''
+    import pandas as pd
+    
+    df_eventos = pd.DataFrame()
+    try:
+        page_token = None
+        while True:
+            events = calendar_service.events().list(
+                calendarId = calendarId, 
+                pageToken  = page_token,
+                q          = busqueda,
+                **resto_parametros
+            ).execute()
+            df_eventos = pd.concat([df_eventos, pd.DataFrame.from_dict(events['items'])])
+            page_token = events.get('nextPageToken')
+            if not page_token:
+                break
+        timecols = ['start', 'end', 'originalStartTime']
+        for col in timecols:
+            df_eventos[col] = df_eventos[col].apply(lambda x: pd.to_datetime(x['dateTime']) if not pd.isna(x) else None)
+    except Exception as e:
+        print(e)
+        
+    return df_eventos
+
+#%%
+def gclObtenerCalendario(calendar_service, calendarId:str='primary'):
+    '''
+    Lista los calendarios del usuario
+    
+    :param calendar_service -- (googleapiclient.discovery.Resource) Servicio de google con permisos para escribir en Google Slides. Se obtiene con el método connect.
+    :param calendarId       -- (str) Indica el identificador de calendario (por defecto asume el principal, primary)
+    
+    :return: dict con la información del calendario. None si hay error
+    '''
+    
+    try:
+        calendar = calendar_service.calendars().get(calendarId = calendarId).execute()
+        return calendar
+    except Exception as e:
+        print(e)
+        return None
+
