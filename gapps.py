@@ -284,7 +284,7 @@ def connect(ruta_credenciales = './', archivo_credenciales = 'credentials.json',
     
     Salida:
     (diccionario) Diccionario cuya clave será el tipo de servicio y como valor el objeto servicio adecuado. Ej.: {'sheets': (objeto servicio de google)}.
-    Posibles claves: 'sheets', 'drive', 'docs', 'gmail'
+    Posibles claves: 'sheets', 'drive', 'docs', 'gmail', 'groups', 'calendar', 'contacts'
     """
     
     import os
@@ -323,6 +323,10 @@ def connect(ruta_credenciales = './', archivo_credenciales = 'credentials.json',
             SCOPES.append('https://www.googleapis.com/auth/cloud-identity.groups')
         elif service == 'calendar':
             SCOPES.append('https://www.googleapis.com/auth/calendar')
+        elif service == 'contacts':
+            #SCOPES.append('https://www.googleapis.com/auth/cloud-platform')
+            SCOPES.append('https://www.googleapis.com/auth/contacts.readonly')
+            SCOPES.append('https://www.googleapis.com/auth/directory.readonly')
 
     creds = None
     # The file token.pickle stores the user's access and refresh tokens, and is
@@ -364,6 +368,8 @@ def connect(ruta_credenciales = './', archivo_credenciales = 'credentials.json',
                 service_dict[service] = build('cloudidentity', 'v1', credentials=creds)
             elif service == 'calendar':
                 service_dict[service] = build('calendar', 'v3', credentials=creds)
+            elif service == 'contacts':
+                service_dict[service] = build('people', 'v1', credentials=creds)
         except Exception as err:
             service_dict[service] = 'Error: ' + str(err)
     return service_dict
@@ -4784,3 +4790,62 @@ def gclObtenerCalendario(calendar_service, calendarId:str='primary'):
         print(e)
         return None
 
+#%%
+######################################################################################################
+# GOOGLE CONTACTS
+######################################################################################################
+#%%
+def gctBuscarPersonas(contacts_service, busqueda:str):
+    '''
+    Realiza una búsqueda en el directorio
+    
+    :param contacts_service -- (googleapiclient.discovery.Resource) Servicio de google con permisos para escribir en Google People. Se obtiene con el método connect.
+    :param busqueda         -- (str) Cadena de búsqueda
+    
+    :return: pandas.DataFrame con los resultados.
+    '''
+    
+    from contextlib import suppress
+    
+    page_token = None
+    resultado = []
+    while True:
+        results = contacts_service.people().searchDirectoryPeople(
+            query=busqueda, 
+            readMask='emailAddresses,names,externalIds,calendarUrls,occupations,organizations,phoneNumbers,addresses', 
+            sources=['DIRECTORY_SOURCE_TYPE_DOMAIN_PROFILE']
+        ).execute()
+        for persona in results['people']:
+            fila = {
+                'nombre_completo' : persona['names'][0]['displayName'],
+                'nombre'          : persona['names'][0]['givenName'],
+                'apellidos'       : persona['names'][0]['familyName'],
+                'email'           : persona['emailAddresses'][0]['value'],
+            }
+            for identificador in persona['externalIds']:
+                with suppress (Exception): fila[identificador['type']] = identificador['value']
+            for direccion in persona['addresses']:
+                if 'primary' in direccion['metadata'] and direccion['metadata']['primary']:
+                    with suppress (Exception): fila['país']      = direccion['country']
+                    with suppress (Exception): fila['codPaís']   = direccion['countryCode']
+                    with suppress (Exception): fila['ciudad']    = direccion['city']
+                    with suppress (Exception): fila['cp']        = direccion['postalCode']
+                    with suppress (Exception): fila['pobox']     = direccion['poBox']
+                    with suppress (Exception): fila['direccion'] = direccion['streetAddress']
+                    with suppress (Exception): fila['lugar']     = direccion['formattedValue']
+
+            for puesto in persona['organizations']:
+                if 'primary' in direccion['metadata'] and direccion['metadata']['primary']:
+                    with suppress (Exception): fila['área']          = puesto['departament']
+                    with suppress (Exception): fila['empresa']       = puesto['name']
+                    with suppress (Exception): fila['puesto']        = puesto['title']
+                    with suppress (Exception): fila['localización']  = puesto['location']
+            for i, telefono in enumerate(persona['phoneNumbers']):
+                with suppress (Exception): fila['Teléfono {0}'.format(i)] = telefono['value']
+
+            resultado.append(fila)
+
+        page_token = results.get('nextPageToken')
+        if not page_token:
+            break
+    return pd.DataFrame.from_dict(resultado)
