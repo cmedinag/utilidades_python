@@ -107,6 +107,9 @@ Funciones:
     - gclListarEventos     : Lista una serie de eventos según búsqueda
     - gclObtenerCalendario : Recupera los detalles de un calendario en particular
     
+- Google Contacts: todas estas funciones necesitan el servicio contacts
+    - gctBuscarPersonas    : Realiza una búsqueda de personas en el directorio
+    
 Versiones:
 ----------
 2022-07-06: v.1.4.1 Resueltos dos bugs en función connect
@@ -127,43 +130,88 @@ Versiones:
 2020-11-13: v1.1. Incluye método getUserPwd y gdrSubirVersion
 2020-10-27: v1.0. Incluye métodos para conectar a los servicios de google
 """
+from __future__ import print_function
 #Para conseguir las credenciales, acceder a esta URL:
 #https://developers.google.com/sheets/api/quickstart/python
 #Pulsar en enable API y DOWNLOAD CLIENT CONFIGURATION
 #Guardar el archivo de credenciales en una ruta conocida.
 
-#%%
-#!pip install --upgrade google-api-python-client google-auth-httplib2 google-auth-oauthlib
+#El primer paso es asegurar que las librerías de google están instaladas. Sino, instalarlas antes de nada.
+def autoSetProxy(proxy = "http://proxyvip:8080", url='https://pypi.python.org/simple'):
+    '''
+    Esta función se encarga de detectar si hace falta un proxy para la salida a internet.
+    En caso afirmativo, establece como proxy el que se le pase como parámetro.
+    
+    :param proxy -- (str) Dirección del proxy a establecer en caso de ser necesario. 'http[s]://direccion:puerto
+    :param url   -- (str) URL para probar si existe salida a internet.
+    
+    :return: bool True si ha tenido éxito en la salida. False en caso contrario.
 
-#%%
-from __future__ import print_function
-import pickle
-import os
-import os.path
-import re
-from apiclient import errors
+    '''
+    import requests
+    import os
+    
+    nopasswordtested = False
+    for i in range(3):
+        try:
+            # Intenta hacer una petición a la página web sin proxy
+            response = requests.get(url)
+            if response.status_code == 200:
+                print('Conexión a internet ok')
+                return True
+        except (requests.exceptions.ProxyError, requests.exceptions.ConnectionError):
+            if (not 'https_proxy' in os.environ) or (os.environ['https_proxy'] == ''):
+                print('No hay salida a internet. Estableciendo proxy y reintentando')
+                if nopasswordtested:
+                    creds = getUserPwd()
+                    setProxy(user=creds['user'], pwd=creds['password'])
+                else:
+                    os.environ['https_proxy'] = proxy
+                    nopasswordtested = True
+            else:
+                print('Quitando proxy y reintentando')
+                os.environ['https_proxy'] = ''
+    return False
 
-from googleapiclient.discovery import build
-from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.transport.requests import Request
+def autoInstalarPaquete(libreria:str, alt:'str|None'=None, log=False):
+    '''
+    Función que comprueba si una librería está instalada en el sistema, y, de no ser así, la instala con pip.
+    
+    :param libreria  - (str) Nombre de la librería en el repositorio de python.
+    :param alt       - (str) nombre de la librería al hacer el import. Si pasaoms None, asume el mismo valor que librería.
+    :param log       - (bool) indica si omstrar por pantalla mensajes de éxito.
+    
+    :return None
+    '''
+    import importlib
+    
+    if alt is None: alt = libreria
+    # Intenta importar la librería
+    try:
+        importlib.import_module(alt)
+        if log:
+            print("La librería", libreria, "ya está instalada")
+    
+    # Si la librería no está instalada, la instala y luego la importa
+    except (ImportError, NameError):
+        print("La librería", libreria, "no está instalada. Instalando...")
+        # import pip
+        # pip.main(['install', '--user', libreria])
+        
+        autoSetProxy()
 
-import base64
-from email.mime.audio import MIMEAudio
-from email.mime.base import MIMEBase
-from email.mime.image import MIMEImage
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.encoders import encode_base64
-import mimetypes
+        import os
+        os.system(f'pip install --user {libreria}')
+        try:
+            importlib.import_module(alt)
+            if log:
+                print("La librería", libreria, "ha sido instalada y cargada exitosamente")
+        except ModuleNotFoundError as err:
+            if log:
+                print('No se puede importar la librería', libreria, '\n', err)
+     
+    return None
 
-from apiclient.http import MediaFileUpload,MediaIoBaseDownload
-from apiclient.discovery import build
-from httplib2 import Http
-
-import pandas as pd
-
-# If modifying these scopes, delete the file token.pickle.
-#SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 def setProxy(user = None, pwd = None, port=8080):
     """
     Genera, para la sesion actual de Python, un proxy con el usuario y contraseña en proxyvip
@@ -228,6 +276,7 @@ def getUserPwd(titulo = 'Introduzca usuario y clave' , user=None):
     ventana = Tk()
     ventana.title(titulo)
     ventana.geometry('220x150')
+    ventana.focus()
     
     #Usuario:
     texto_user =Label(ventana,text='Usuario:    ')
@@ -268,7 +317,41 @@ def getUserPwd(titulo = 'Introduzca usuario y clave' , user=None):
     else:
         return None
 
+autoInstalarPaquete('google-api-python-client', 'googleapiclient')
+autoInstalarPaquete('google-auth-httplib2', 'httplib2')
+autoInstalarPaquete('google-auth-oauthlib', 'google_auth_oauthlib')
 
+#%%
+#!pip install --upgrade google-api-python-client google-auth-httplib2 google-auth-oauthlib
+
+#%%
+import pickle
+import os
+import os.path
+import re
+from apiclient import errors
+
+from googleapiclient.discovery import build
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
+
+import base64
+from email.mime.audio import MIMEAudio
+from email.mime.base import MIMEBase
+from email.mime.image import MIMEImage
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.encoders import encode_base64
+import mimetypes
+
+from apiclient.http import MediaFileUpload,MediaIoBaseDownload
+from apiclient.discovery import build
+from httplib2 import Http
+
+import pandas as pd
+
+# If modifying these scopes, delete the file token.pickle.
+#SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 #%%  
 def connect(ruta_credenciales = './', archivo_credenciales = 'credentials.json', ruta_token = None, archivo_token='token.pickle', services=[], port=0):
 
@@ -4813,7 +4896,8 @@ def gctBuscarPersonas(contacts_service, busqueda:str):
         results = contacts_service.people().searchDirectoryPeople(
             query=busqueda, 
             readMask='emailAddresses,names,externalIds,calendarUrls,occupations,organizations,phoneNumbers,addresses', 
-            sources=['DIRECTORY_SOURCE_TYPE_DOMAIN_PROFILE']
+            sources=['DIRECTORY_SOURCE_TYPE_DOMAIN_PROFILE'],
+            pageToken=page_token
         ).execute()
         for persona in results['people']:
             fila = {
@@ -4835,8 +4919,8 @@ def gctBuscarPersonas(contacts_service, busqueda:str):
                     with suppress (Exception): fila['lugar']     = direccion['formattedValue']
 
             for puesto in persona['organizations']:
-                if 'primary' in direccion['metadata'] and direccion['metadata']['primary']:
-                    with suppress (Exception): fila['área']          = puesto['departament']
+                if 'primary' in puesto['metadata'] and puesto['metadata']['primary']:
+                    with suppress (Exception): fila['área']          = puesto['department']
                     with suppress (Exception): fila['empresa']       = puesto['name']
                     with suppress (Exception): fila['puesto']        = puesto['title']
                     with suppress (Exception): fila['localización']  = puesto['location']
