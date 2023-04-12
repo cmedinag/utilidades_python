@@ -173,7 +173,7 @@ def autoSetProxy(proxy = "http://proxyvip:8080", url='https://pypi.python.org/si
                 os.environ['https_proxy'] = ''
     return False
 
-def autoInstalarPaquete(libreria:str, alt:'str|None'=None, log=False):
+def autoInstalarPaquete(libreria:str, alt:'str|None'=None, log:bool=False, upgrade:bool=False):
     '''
     Función que comprueba si una librería está instalada en el sistema, y, de no ser así, la instala con pip.
     
@@ -188,20 +188,29 @@ def autoInstalarPaquete(libreria:str, alt:'str|None'=None, log=False):
     if alt is None: alt = libreria
     # Intenta importar la librería
     try:
-        importlib.import_module(alt)
-        if log:
-            print("La librería", libreria, "ya está instalada")
+        if not upgrade:
+            importlib.import_module(alt)
+            if log:
+                print("La librería", libreria, "ya está instalada")
+        else:
+            raise ImportError('Hay que actualizar')
     
     # Si la librería no está instalada, la instala y luego la importa
     except (ImportError, NameError):
-        print("La librería", libreria, "no está instalada. Instalando...")
+        if not upgrade and log:
+            print("La librería", libreria, "no está instalada. Instalando...")
+        elif upgrade and log:
+            print("La librería", libreria, "se va a instalar/actualicar. Instalando...")
         # import pip
         # pip.main(['install', '--user', libreria])
         
         autoSetProxy()
 
         import os
-        os.system(f'pip install --user {libreria}')
+        if upgrade: 
+            os.system(f'pip install --user --upgrade {libreria}')
+        else:
+            os.system(f'pip install --user {libreria}')
         try:
             importlib.import_module(alt)
             if log:
@@ -1310,9 +1319,15 @@ def gshLeerHoja(sheets_service, spreadsheetId, nombreHoja, rango = None, header 
         print('No data found.')
         return None
     else:
-        if header:
-            cols = values[0]
-            data = values[1:]
+        if (type(header) == bool and header):
+            header = [0]
+        if type(header) == list:
+            if len(header) > 1:
+                cabecera = [values[i] for i in header]
+                cols = pd.MultiIndex.from_tuples([tuple(sub[i] for sub in cabecera) for i in range(len(cabecera[0]))])
+            else:
+                cols = values[header[0]]
+            data = values[max(header)+1:]
             len_data = max([len(fila) for fila in data] + [0])
             while len(cols)<len_data:
                 cols.append('')
@@ -3203,7 +3218,7 @@ def ggmCreateDraft(service, message, user_id='me'):
         print ('An error occurred:', error)
 
 #%%
-def ggmCreateMessage(to, subject='', message_text='', sender='me', replyTo = None, html=False, cc=None):
+def ggmCreateMessage(to, subject='', message_text='', sender='me', replyTo = None, html=False, cc=None, cco=None):
     """Create a message for an email.
 
     Args:
@@ -3214,6 +3229,7 @@ def ggmCreateMessage(to, subject='', message_text='', sender='me', replyTo = Non
     - replyTo: (str) Opcional. Si se desea que al contestar el correo se dirija a una dirección diferente, indicarla aquí.
     - html: (bool) Opcional. Indica si el mensaje debe interpretarse como código html.
     - cc: (str) Opcional. Destinatario en copia. En caso de haber varios, se separan por coma.
+    - cco: (str) Opcional. Destinatario en copia oculta. En caso de haber varios, se separan por coma.
 
     Returns:
     An object containing a base64url encoded email object.
@@ -3230,6 +3246,8 @@ def ggmCreateMessage(to, subject='', message_text='', sender='me', replyTo = Non
         message.add_header('Reply-To', str(replyTo))
     if cc:
         message.add_header('Cc', str(cc))
+    if cco:
+        message.add_header('Bcc', str(cco))
 
 
     if html:
@@ -3245,7 +3263,7 @@ def ggmCreateMessage(to, subject='', message_text='', sender='me', replyTo = Non
 
 
 #%%
-def ggmCreateMessageWithAttachment(to, file_dir, filename, subject='', message_text='', sender='me', replyTo=None, html=False, cc=None):
+def ggmCreateMessageWithAttachment(to, file_dir, filename, subject='', message_text='', sender='me', replyTo=None, html=False, cc=None, cco=None):
     """Create a message for an email.
 
     Args:
@@ -3258,6 +3276,7 @@ def ggmCreateMessageWithAttachment(to, file_dir, filename, subject='', message_t
     - replyTo: (str) Opcional. Si se desea que al contestar el correo se dirija a una dirección diferente, indicarla aquí.
     - html: (bool) Opcional. Indica si el mensaje debe interpretarse como código html.
     - cc: (str) Opcional. Destinatario en copia. En caso de haber varios, se separan por coma.
+    - cco: (str) Opcional. Destinatario en copia oculta. En caso de haber varios, se separan por coma.
 
     Returns:
     An object containing a base64url encoded email object.
@@ -3280,6 +3299,8 @@ def ggmCreateMessageWithAttachment(to, file_dir, filename, subject='', message_t
         message.add_header('Reply-To', str(replyTo))
     if cc:
         message.add_header('Cc', str(cc))
+    if cco:
+        message.add_header('Bcc', str(cco))
 
     if html:
         msg = MIMEText(message_text, 'html')
@@ -3324,7 +3345,7 @@ def ggmCreateMessageWithAttachment(to, file_dir, filename, subject='', message_t
     return body
 
 #%%
-def ggmCreateMessageWithAttachments(to, ficheros, subject='', message_text='', sender='me', replyTo=None, html=False, cc=None):
+def ggmCreateMessageWithAttachments(to, ficheros, subject='', message_text='', sender='me', replyTo=None, html=False, cc=None, cco=None):
     """Create a message for an email.
 
     Args:
@@ -3336,6 +3357,7 @@ def ggmCreateMessageWithAttachments(to, ficheros, subject='', message_text='', s
     - replyTo: (str) Opcional. Si se desea que al contestar el correo se dirija a una dirección diferente, indicarla aquí.
     - html: (bool) Opcional. Indica si el mensaje debe interpretarse como código html.
     - cc: (str) Opcional. Destinatario en copia. En caso de haber varios, se separan por coma.
+    - cco: (str) Opcional. Destinatario en copia oculta. En caso de haber varios, se separan por coma.
 
     Returns:
     An object containing a base64url encoded email object.
@@ -3358,6 +3380,8 @@ def ggmCreateMessageWithAttachments(to, ficheros, subject='', message_text='', s
         message.add_header('Reply-To', str(replyTo))
     if cc:
         message.add_header('Cc', str(cc))
+    if cco:
+        message.add_header('Bcc', str(cco))
 
     if html:
         msg = MIMEText(message_text, 'html')
