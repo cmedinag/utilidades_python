@@ -1287,8 +1287,11 @@ def gshLeerHoja(sheets_service, spreadsheetId, nombreHoja, rango = None, header 
     rango : str, optional
         Rango de celdas que leer. Debe estar escrito en notación de hoja de cálculo. Ejemplos: 'A1', 'B2:C2', 'B4:F10'. 
         The default is None.
-    header : bool, optional, default=True
-        Indica si el rango a leer tiene cabecera.
+    header : (bool | list) opcional, default=True
+        Indica si el rango a leer tiene cabecera. Si es True, asume que será la primera fila del rango. 
+        Si es una lista con más de un elemento, devolverá un dataframe con multiíndice. 
+        Los índices van referenciados a la tabla, no a la fila de la gsheet.
+        Esto es, si se indica rango='C3:F10', y header=[0,1], la cabecera estará formada por las filas 3 y 4.
     formato_valores : str, optional, default = 'UNFORMATTED_VALUE'
         Indica 'FORMATTED_VALUE' si debe traer el valor tal cual se representa en la gsheet (con el formato de moneda, por ejemplo), o 'UNFORMATTED_VALUE'si debe recuperar el valor original.
     formato_fechas: str, optional, default = 'FORMATTED_STRING'
@@ -2863,7 +2866,7 @@ def gshFormatoCondicionalRango(sheets_service, spreadsheetId, nombreHoja, reglas
             formato_peticion['textFormat'] = {}
         
         if 'colorTexto' in regla_form['formato'].keys():
-            colorTexto = regla_form['formato']['colorFondo']
+            colorTexto = regla_form['formato']['colorTexto']
             formato_peticion['textFormat']['foregroundColor'] = gshTraducirColor(colorTexto)
             
         if 'negrita' in regla_form['formato'].keys():
@@ -3198,6 +3201,42 @@ def gdcReemplazarTexto(docs_service, documentId, campos, textos, envolverCampos=
 ######################################################################################################
 # GMAIL
 ######################################################################################################
+#%%
+def ggmExtraerDetallesMail(mensaje):
+    '''Esta función es ayudante. Obtiene los principales detalles de la cabecera de un mail obtenido con el método ggmLeerCorreo
+    Args:
+        - mensaje (dict) Objeto diccionario que representa el contenido de un mail. Se obtiene llamando al método get de GMail Api, o bien a la función ggmLeerCorreo.
+    
+    Returns:
+        (dict) Objeto diccionario más simplificado con las claves id, asunto, from, cc, y fecha.
+    '''
+    detalles = {}
+    if 'threadId' in mensaje:
+        detalles['threadId'] = mensaje['threadId']
+    
+    #Cabecera
+    for header in mensaje['payload']['headers']:
+        if header['name'].lower() == 'message-id':
+            detalles['id'] = header['value']
+            
+        if header['name'].lower() == 'subject':
+            detalles['asunto'] = header['value']
+            
+        if header['name'].lower() == 'from':
+            detalles['from'] = header['value']
+    
+        if header['name'].lower() == 'to':
+            detalles['to'] = header['value']
+    
+        if header['name'].lower() == 'cc':
+            detalles['cc'] = header['value']
+    
+        if header['name'].lower() == 'date':
+            detalles['fecha'] = header['value']
+    
+    return detalles
+
+#%%
 def ggmCreateDraft(service, message, user_id='me'):
     """Crea un borrador.
         Args:
@@ -3218,7 +3257,60 @@ def ggmCreateDraft(service, message, user_id='me'):
         print ('An error occurred:', error)
 
 #%%
-def ggmCreateMessage(to, subject='', message_text='', sender='me', replyTo = None, html=False, cc=None, cco=None):
+def _ggmConstruirMIMEMessage(to, subject='', message_text='', sender='me', replyTo = None, html=False, cc=None, cco=None, mensaje_respuesta=None, replyAll=True):
+    '''Función interna de código que comparten ggmCreateMessage y ggmCreateMessageWithAttachments'''
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+    
+    message = MIMEMultipart()
+    message['From'] = str2ascii(sender)
+    
+    if replyTo:
+        message.add_header('Reply-To', str(replyTo))
+    if cco:
+        message.add_header('Bcc', str(cco))
+    
+    threadId = None
+    if mensaje_respuesta:
+        detalles = ggmExtraerDetallesMail(mensaje_respuesta)
+        threadId = detalles['threadId']
+        if not detalles['asunto'].startswith('RE: '):
+            asunto = 'RE: ' + detalles['asunto']
+        else:
+            asunto = detalles['asunto']
+                
+        message['To'] = str(to) + ',' + detalles['from']
+    
+        if replyAll:
+            message['To'] += ','+ detalles['to']
+            if 'cc' in detalles:
+                if cc:
+                    cc += ',' + detalles['cc']
+                else:
+                    cc = detalles['cc']
+        
+        message.add_header('In-Reply-To', detalles['id'])
+        message.add_header('References',  detalles['id'])
+        message['Subject'] = asunto
+        
+    else:
+        message['To'] = str(to)
+        message['Subject'] = str(subject)
+    
+    if cc:
+        message.add_header('Cc', str(cc))
+    
+    
+    if html:
+        msg = MIMEText(message_text, 'html')
+    else:
+        msg = MIMEText(message_text)
+    message.attach(msg)
+    
+    return message, threadId
+    
+#%%
+def ggmCreateMessage(to, subject='', message_text='', sender='me', replyTo = None, html=False, cc=None, cco=None, mensaje_respuesta=None, replyAll=True):
     """Create a message for an email.
 
     Args:
@@ -3230,40 +3322,24 @@ def ggmCreateMessage(to, subject='', message_text='', sender='me', replyTo = Non
     - html: (bool) Opcional. Indica si el mensaje debe interpretarse como código html.
     - cc: (str) Opcional. Destinatario en copia. En caso de haber varios, se separan por coma.
     - cco: (str) Opcional. Destinatario en copia oculta. En caso de haber varios, se separan por coma.
+    - mensaje_respuesta: (dict) Opcional. Si se desea que el correo sea enviado como respuesta a otro, se incluye dicho correo en este parámetro. Es el diccionario que se obtiene como salida de la función ggmLeerCorreo, o del método get de la GMailAPI. Al incluirse, el parámetro asunto es obviado, y pasa a tomar el de este mensaje. Añadirá el remitente a la lista de destinatarios del parámetro to.
+    - replyAll: (bool). En caso de proporcionar mensaje_respuesta, indica si hay que poner en copia a todos los destinatarios. De ser así, se añaden a los campos CC y To. Por defecto es True.
 
     Returns:
     An object containing a base64url encoded email object.
     """
     import base64
-    from email.mime.text import MIMEText
-    
-    message = MIMEMultipart()
-    message['To'] = str(to)
-    message['From'] = str2ascii(sender)
-    message['Subject'] = str(subject)
 
-    if replyTo:
-        message.add_header('Reply-To', str(replyTo))
-    if cc:
-        message.add_header('Cc', str(cc))
-    if cco:
-        message.add_header('Bcc', str(cco))
-
-
-    if html:
-        msg = MIMEText(message_text, 'html')
-    else:
-        msg = MIMEText(message_text)
-    message.attach(msg)
+    message, threadId = _ggmConstruirMIMEMessage(to, subject, message_text, sender, replyTo, html, cc, cco, mensaje_respuesta, replyAll)
     
     b64_bytes = base64.urlsafe_b64encode(message.as_bytes())
     b64_string = b64_bytes.decode()
     body = {'raw': b64_string}
+    if threadId:
+        body['threadId'] = threadId
     return body
-
-
 #%%
-def ggmCreateMessageWithAttachment(to, file_dir, filename, subject='', message_text='', sender='me', replyTo=None, html=False, cc=None, cco=None):
+def ggmCreateMessageWithAttachment(to, file_dir, filename, subject='', message_text='', sender='me', replyTo=None, html=False, cc=None, cco=None, mensaje_respuesta=None, replyAll=True):
     """Create a message for an email.
 
     Args:
@@ -3277,6 +3353,8 @@ def ggmCreateMessageWithAttachment(to, file_dir, filename, subject='', message_t
     - html: (bool) Opcional. Indica si el mensaje debe interpretarse como código html.
     - cc: (str) Opcional. Destinatario en copia. En caso de haber varios, se separan por coma.
     - cco: (str) Opcional. Destinatario en copia oculta. En caso de haber varios, se separan por coma.
+    - mensaje_respuesta: (dict) Opcional. Si se desea que el correo sea enviado como respuesta a otro, se incluye dicho correo en este parámetro. Es el diccionario que se obtiene como salida de la función ggmLeerCorreo, o del método get de la GMailAPI. Al incluirse, el parámetro asunto es obviado, y pasa a tomar el de este mensaje. Añadirá el remitente a la lista de destinatarios del parámetro to.
+    - replyAll: (bool). En caso de proporcionar mensaje_respuesta, indica si hay que poner en copia a todos los destinatarios. De ser así, se añaden a los campos CC y To. Por defecto es True.
 
     Returns:
     An object containing a base64url encoded email object.
@@ -3291,25 +3369,8 @@ def ggmCreateMessageWithAttachment(to, file_dir, filename, subject='', message_t
     import mimetypes
     import os
 
-    message = MIMEMultipart()
-    message['To'] = str(to)
-    message['From'] = str2ascii(sender)
-    message['Subject'] = str(subject)
-    if replyTo:
-        message.add_header('Reply-To', str(replyTo))
-    if cc:
-        message.add_header('Cc', str(cc))
-    if cco:
-        message.add_header('Bcc', str(cco))
-
-    if html:
-        msg = MIMEText(message_text, 'html')
-    else:
-        msg = MIMEText(message_text)
+    message, threadId = _ggmConstruirMIMEMessage(to, subject, message_text, sender, replyTo, html, cc, cco, mensaje_respuesta, replyAll)
     
-    
-    message.attach(msg)
-
     path = os.path.join(file_dir, filename)
     content_type, encoding = mimetypes.guess_type(path)
 
@@ -3342,6 +3403,8 @@ def ggmCreateMessageWithAttachment(to, file_dir, filename, subject='', message_t
     b64_bytes = base64.urlsafe_b64encode(message.as_bytes())
     b64_string = b64_bytes.decode()
     body = {'raw': b64_string}
+    if threadId:
+        body['threadId'] = threadId
     return body
 
 #%%
