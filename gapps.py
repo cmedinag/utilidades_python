@@ -3202,7 +3202,7 @@ def gdcReemplazarTexto(docs_service, documentId, campos, textos, envolverCampos=
 # GMAIL
 ######################################################################################################
 #%%
-def ggmExtraerDetallesMail(mensaje):
+def _ggmExtraerDetallesMail(mensaje):
     '''Esta función es ayudante. Obtiene los principales detalles de la cabecera de un mail obtenido con el método ggmLeerCorreo
     Args:
         - mensaje (dict) Objeto diccionario que representa el contenido de un mail. Se obtiene llamando al método get de GMail Api, o bien a la función ggmLeerCorreo.
@@ -3272,7 +3272,7 @@ def _ggmConstruirMIMEMessage(to, subject='', message_text='', sender='me', reply
     
     threadId = None
     if mensaje_respuesta:
-        detalles = ggmExtraerDetallesMail(mensaje_respuesta)
+        detalles = _ggmExtraerDetallesMail(mensaje_respuesta)
         threadId = detalles['threadId']
         if not detalles['asunto'].startswith('RE: '):
             asunto = 'RE: ' + detalles['asunto']
@@ -3293,6 +3293,30 @@ def _ggmConstruirMIMEMessage(to, subject='', message_text='', sender='me', reply
         message.add_header('References',  detalles['id'])
         message['Subject'] = asunto
         
+        if 'parts' in mensaje_respuesta['payload']:
+            partes = _ggmExtraerPartes(mensaje_respuesta['payload']['parts'])
+            if html:
+                message_text = '<div dir="ltr">' \
+                    + message_text \
+                    + '</div><br><br><br>' \
+                    + '<div class="gmail_quote"><div dir="ltr" class="gmail_attr">' \
+                    + 'On ' + detalles["fecha"] + ' ' \
+                    + detalles["from"] \
+                    + ' wrote:<br></div>' \
+                    + '<blockquote class="gmail_quote" style="margin:0px 0px 0px 0.8ex;border-left:1px solid rgb(204,204,204);padding-left:1ex">' \
+                    + partes['html'] \
+                    + '</div>' \
+                    + '</blockquote>'
+            else:
+                message_text += \
+                    '\n\n\n' + \
+                    'El ' + detalles["fecha"] + ' ' + detalles["from"] + \
+                    ' escribió:\n' + \
+                    partes['texto'].replace('\n', '\n> ')
+            
+            for parte in partes['otros']:
+                message.attach(parte)
+
     else:
         message['To'] = str(to)
         message['Subject'] = str(subject)
@@ -3309,6 +3333,41 @@ def _ggmConstruirMIMEMessage(to, subject='', message_text='', sender='me', reply
     
     return message, threadId
     
+#%%
+def _ggmExtraerPartes(parts):
+    from email.mime.text      import MIMEText
+    import base64
+    
+    partes = {'html': '', 'texto' : '', 'otros' : []}
+    for part in parts:
+        if part['mimeType'].startswith('text'):
+            datos = part['body']['data']
+            texto = base64.urlsafe_b64decode(datos).decode()
+            if part['mimeType'].endswith('html'):
+                partes['html'] += texto
+            
+            if part['mimeType'].endswith('plain'):
+                partes['texto'] += texto
+        
+        elif part['mimeType'].startswith('multipart'):
+            subpartes = _ggmExtraerPartes(part['parts'])
+            partes['texto'] += subpartes['texto']
+            partes['html']  += subpartes['html']
+            partes['otros'] += subpartes['otros']
+        
+        # elif part['mimeType'].startswith('image'):
+        #     from email.mime.image import MIMEImage
+            
+        #     image_data = base64.b64decode(part['body']['attachmentId'])
+            
+        #     mime_image = MIMEImage(image_data, _subtype=part['mimeType'])
+        #     for header in part['headers']:
+        #         mime_image.add_header(header['name'], header['value'])
+        #     mime_image.set_payload(image_data)
+        #     partes['otros'].append(mime_image)
+            
+    return partes
+
 #%%
 def ggmCreateMessage(to, subject='', message_text='', sender='me', replyTo = None, html=False, cc=None, cco=None, mensaje_respuesta=None, replyAll=True):
     """Create a message for an email.
