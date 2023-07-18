@@ -3467,7 +3467,7 @@ def ggmCreateMessageWithAttachment(to, file_dir, filename, subject='', message_t
     return body
 
 #%%
-def ggmCreateMessageWithAttachments(to, ficheros, subject='', message_text='', sender='me', replyTo=None, html=False, cc=None, cco=None):
+def ggmCreateMessageWithAttachments(to, ficheros, subject='', message_text='', sender='me', replyTo=None, html=False, cc=None, cco=None, mensaje_respuesta=None, replyAll=True):
     """Create a message for an email.
 
     Args:
@@ -3480,6 +3480,8 @@ def ggmCreateMessageWithAttachments(to, ficheros, subject='', message_text='', s
     - html: (bool) Opcional. Indica si el mensaje debe interpretarse como código html.
     - cc: (str) Opcional. Destinatario en copia. En caso de haber varios, se separan por coma.
     - cco: (str) Opcional. Destinatario en copia oculta. En caso de haber varios, se separan por coma.
+    - mensaje_respuesta: (dict) Opcional. Si se desea que el correo sea enviado como respuesta a otro, se incluye dicho correo en este parámetro. Es el diccionario que se obtiene como salida de la función ggmLeerCorreo, o del método get de la GMailAPI. Al incluirse, el parámetro asunto es obviado, y pasa a tomar el de este mensaje. Añadirá el remitente a la lista de destinatarios del parámetro to.
+    - replyAll: (bool). En caso de proporcionar mensaje_respuesta, indica si hay que poner en copia a todos los destinatarios. De ser así, se añaden a los campos CC y To. Por defecto es True.
 
     Returns:
     An object containing a base64url encoded email object.
@@ -3494,24 +3496,7 @@ def ggmCreateMessageWithAttachments(to, ficheros, subject='', message_text='', s
     import mimetypes
     import os
 
-    message = MIMEMultipart()
-    message['To'] = str(to)
-    message['From'] = str2ascii(sender)
-    message['Subject'] = str(subject)
-    if replyTo:
-        message.add_header('Reply-To', str(replyTo))
-    if cc:
-        message.add_header('Cc', str(cc))
-    if cco:
-        message.add_header('Bcc', str(cco))
-
-    if html:
-        msg = MIMEText(message_text, 'html')
-    else:
-        msg = MIMEText(message_text)
-    
-    
-    message.attach(msg)
+    message, threadId = _ggmConstruirMIMEMessage(to, subject, message_text, sender, replyTo, html, cc, cco, mensaje_respuesta, replyAll)
 
     for fichero in ficheros:
         nombre_fichero = os.path.split(fichero)[-1]
@@ -3546,6 +3531,8 @@ def ggmCreateMessageWithAttachments(to, ficheros, subject='', message_text='', s
     b64_bytes = base64.urlsafe_b64encode(message.as_bytes())
     b64_string = b64_bytes.decode()
     body = {'raw': b64_string}
+    if threadId:
+        body['threadId'] = threadId
     return body
 
 
