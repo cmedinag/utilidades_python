@@ -75,6 +75,7 @@ Funciones:
         - ggmDescargarAdjuntos: recupera y descarga los adjuntos de un correo.
         - ggmLeerCorreo: recupera los detalles de un correo
         - ggmListarCorreos: lista una serie de correos dados unos criterios de búsqueda.
+        - ggmObtenerCorreosHilo: lista los mensajes asociados a un hilo de correos.
     
 - Google Drive: todas estas funciones necesitan el servicio 'drive'
     - gdrBorrarFichero: elimina un fichero de google drive.
@@ -558,6 +559,101 @@ FORMATOS_BASE = {
         'texto_26_posic'        : {"type" : "TEXT"     , "pattern" : '00000000000000000000000000_@'}
         }
 
+#%%
+#https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets/cells?hl=en#borders
+def gshBordearRango(
+    sheets_service, 
+    spreadsheetId, 
+    nombreHoja, 
+    rango, 
+    idHoja    = None,
+    arriba    = None,
+    abajo     = None,
+    izquierda = None,
+    derecha   = None
+):
+    """
+    Establece un formato para los bordes del rango especificado.
+
+    Parameters
+    ----------
+    sheets_service : service object
+        Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
+    spreadsheetId : str
+        Identificador del libro en Google Drive.
+    nombreHoja : str
+        Nombre de la hoja en la que se desea escribir dentro del libro.
+    rango : str 
+        Rango a aplicar el formato con notación de la sheet. Ejemplo: 'C6:O12'
+    idHoja : str, optional
+        Id de la hoja dentro de la spreadsheet. Si se especifica este parámetro se ignora el 'nombreHoja'. The default is None.
+    arriba: dict, optional
+    abajo: dict, optional
+    izquierda: dict, optional
+    derecha: dict, optional
+
+    Para cualquiera de los bordes (arriba, abajo, izquierda, derecha) es necesario  un diccionario
+    especificando el estilo y color del borde
+        {"style":  str, optional default NONE "DOTTED", "DASHED", "SOLID", "SOLID_MEDIUM", "SOLID_THICK", "NONE", "DOUBLE"
+         "color": dict, optional  default NONE {
+             "red": decimal. Valores numérico entre 0 y 1
+             "green": decimal. Valores numérico entre 0 y 1
+             "blue": decimal. Valores numérico entre 0 y 1
+             "alpha": decimal. Valores numérico entre 0 y 1
+         }
+        }
+
+    Ejemplo:
+
+    {
+    "style": "DASHED",
+    "color": {
+                "red": 1.0
+            }
+    }
+
+
+    Returns
+    -------
+    bool
+        True si ha funcionado correctamente, False en caso contrario.
+    """
+
+    if idHoja is None:
+        idHoja = gshObtenerIDHoja(sheets_service, spreadsheetId, nombreHoja) 
+        
+    if idHoja is None:
+        print("No se puede formatear la hoja")
+        return False
+    
+    rango_req = gshTraducirRango(rangoLetras=rango, sheetId=idHoja)
+    if rango_req is None:
+        print("No se ha proporcionado un rango correcto para el formato")
+        return False    
+
+    request_formato = {
+         'requests' : [
+             {
+                  'updateBorders':
+                    {
+                        'range':  rango_req,
+                        "top":    arriba,
+                        "left":   izquierda,
+                        'right':  derecha,
+                        'bottom': abajo
+                    }    
+            }] 
+        }  
+    
+    try:
+        sheets_service.spreadsheets().batchUpdate(spreadsheetId=spreadsheetId, body=request_formato).execute()
+    except Exception as e:
+        print("Error formateando la hoja:", e)
+        return False
+    
+    return True
+
+#%%
 def gshBorrarHoja(sheets_service, spreadsheetId, nombreHoja=None, idHoja=None):
     """
     Esta función elimina una hoja en un libro de google.
@@ -597,961 +693,124 @@ def gshBorrarHoja(sheets_service, spreadsheetId, nombreHoja=None, idHoja=None):
         print('La hoja no existe, no se realiza ninguna acción')
 
 #%%
-def gshCrearHoja(sheets_service, spreadsheetId, nombreHoja, nFilas = 100, nCols = 30):
+def gshBorrarVistaFiltro(sheets_service, spreadsheetId, nombreHoja, idVista=None):
     """
-    Esta función crea una nueva hoja en un libro de google.
-    
-    sheets_service = Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
-    spreadsheetId = str, Identificador del libro en Google Drive.
-    nombreHoja = str, Nombre de la hoja en la que se desea crear dentro del libro.
-    nFilas = int, opcional. Número de filas que se quiere que tenga la nueva hoja (por defecto 100)
-    nCols = int, opcional. Número de columnas que se quiere que tenga la nueva hoja (por defecto 30)
-    """
-    if nombreHoja not in gshObtenerNombreHojas(sheets_service, spreadsheetId):
-        res = sheets_service.spreadsheets().batchUpdate(spreadsheetId = spreadsheetId,
-                                                 body={
-                                                     'requests': [
-                                                         {'addSheet':{
-                                                             'properties': {
-                                                                 'title': nombreHoja,
-                                                                 'gridProperties': {
-                                                                     'rowCount':nFilas,
-                                                                     'columnCount':nCols
-                                                                 }
-                                                             }
-                                                         }
-                                                         }
-                                                     ]
-                                                 }
-                                                ).execute()
-        return res
-    else:
-        print('La hoja ya existe, no se realiza ninguna acción')
-        return None
-
-#%%
-
-def gshDuplicarHoja(sheets_service, spreadsheetId, nombreHojaOrig, nombreHojaNueva, indiceNuevaHoja = None):
-    """
-    Esta función duplica una hoja en un libro de google.
+    Esta funcion borra una o varias vistas de filtro, si existen. Devuelve True si se borra bien, False si hay un error o no existe.
 
     Parameters
     ----------
-    sheets_service : Service
+    sheets_service : service object
         Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
-    spreadsheetId : str
-        Identificador del libro en Google Drive.
-    nombreHojaOrig : str
-        Nombre de la hoja que se va a copiar.
-    nombreHojaNueva : str
-        Nombre de la hoja resultante.
-    indiceNuevaHoja : int, default None
-        Indice que debe ocupar la nueva hoja (base 0). Si no se pasa, la nueva hoja será la primera. 
-
-    Returns
-    -------
-    res : json
-        resultado de la ejecución. None en caso de error.
-    """
-    sheet_metadata = sheets_service.spreadsheets().get(spreadsheetId=spreadsheetId).execute()
-    sheets = sheet_metadata.get('sheets', '')
-    hojasActualesLibro = dict()
-    for sheet in sheets:
-        hojasActualesLibro[ sheet['properties']['title'] ] = sheet['properties']['sheetId']
-    
-    
-    
-    if nombreHojaOrig not in hojasActualesLibro.keys():
-        print('No se encuentra la hoja', nombreHojaOrig)
-        return None
-    
-    elif nombreHojaNueva not in hojasActualesLibro:
-        res = sheets_service.spreadsheets().batchUpdate(spreadsheetId = spreadsheetId,
-                                                        body={
-                                                            'requests': [
-                                                                {'duplicateSheet':{
-                                                                    "sourceSheetId"   : hojasActualesLibro[nombreHojaOrig],
-                                                                    "insertSheetIndex": indiceNuevaHoja,
-                                                                    "newSheetName"    : nombreHojaNueva
-                                                                    }
-                                                                }
-                                                            ]
-                                                            }
-                                                        ).execute()
-        return res
-    else:
-        print('La hoja', nombreHojaNueva, 'ya existe, no se realiza ninguna acción')
-
-
-#%%
-def gshCrearLibro(sheets_service, nombreLibro, nombreHoja = None):
-    """
-    Esta función crea un nuevo libro GSheets y lo deja en "Mi unidad".
-
-    sheets_service = Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
-    nombreLibro = str, Nombre del libro.
-    nombreHoja = str, opcional. Nombre de la única hoja que tendrá el libro.
-    
-    returns objeto dict_like con los detalles del libro.
-    """
-    spreadsheet_body = {
-      "properties": {
-        "title": nombreLibro,
-        "locale": ""
-      },
-    }
-    if nombreHoja is not None:
-        spreadsheet_body['sheets'] = [
-            {
-                "properties": {
-                    "title": nombreHoja
-                }
-            }
-        ]
-
-    request = sheets_service.spreadsheets().create(body=spreadsheet_body)
-    return request.execute()
-
-#%%
-def gshDescargarHoja(sheets_service, spreadsheetid, hojaId = None, nombreHoja = None, ficheroDescarga = None, tipo='pdf', sobreescribir = False, vertical = True, size = 'A4'):
-    """
-    Esta función descargará una sola hoja de una gsheet a un fichero.
-    sheets_service  -- Objeto servicio con permisos de lectura en Google Sheets. Se obtiene con el método connect.
-    spreadsheetid   -- (str) Identificador de la gsheet en Drive.
-    hojaId          -- (str) Identificador de la hoja (gid)
-    nombreHoja      -- (str) Nombre de la hoja. Si se proporciona hojaId, no se hace caso a este parámetro.
-    ficheroDescarga -- (str) Fichero de descarga en la que dejar el fichero. Si no se indica, lo dejará en la carpeta de trabajo con el nombre de la gsheet y el id de la hoja descargada.
-    tipo            -- (str) Formato de exportación. Por defecto, 'pdf'. Admite también 'xlsx' y 'csv'
-    sobreescribir   -- (bool) Default False. Indica si debe machacar el fichero en caso de que exista, o crear un nombre nuevo en su lugar.
-    vertical        -- (bool) Default True. Indica si la exportación se debe realizar (si tipo es 'pdf') en vertical (True) o apaisado (False) 
-    size            -- (str) Tamaño del folio a descargar (si tipo es 'pdf')
-    
-    return          -- (str) Ruta completa del fichero descargado.
-    """
-    import urllib.parse
-    import os
-
-    result = sheets_service.spreadsheets().get(spreadsheetId = spreadsheetid).execute()
-    spreadsheetUrl = result['spreadsheetUrl']
-    if nombreHoja is None and hojaId is None:
-        print('Necesito o el id de la hoja (gid) o el nombre de la misma')
-        return None
-    elif hojaId is None:
-        for sheet in result['sheets']:
-            if sheet['properties']['title'] == nombreHoja:
-                hojaId = sheet['properties']['sheetId']
-    if hojaId is None:
-        print('Hoja no encontrada')
-        return None
-    
-    exportUrl = spreadsheetUrl.replace("/edit", '/export')
-    params = {
-        'format': tipo,
-        'gid': hojaId,
-    } 
-    if tipo == 'pdf':
-        if not vertical:
-            params['portrait'] = False
-        params['size'] =  size
-        
-    queryParams = urllib.parse.urlencode(params)
-    url = exportUrl + '&' + queryParams
-    
-    resp, content = sheets_service._http.request(url)
-    if ficheroDescarga is None:
-        ficheroDescarga = result['properties']['title'] + '_' + str(hojaId) + '.' + tipo
-    if not sobreescribir:
-        if os.path.isfile(ficheroDescarga):
-            fichero = os.path.splitext(ficheroDescarga)
-            i = 1
-            while True:
-                rutaNueva = fichero[0] + ' (' + str(i) + ')' + fichero[1]
-                if not os.path.isfile(rutaNueva):
-                    ficheroDescarga = rutaNueva
-                    break
-                i=i+1
-
-    with open(ficheroDescarga, 'wb') as descarga:
-        descarga.write(content)
-    return ficheroDescarga
-    
-#%%
-def gshEscribirHoja(sheets_service, dataframe, spreadsheetId, nombreHoja, rango = None, replace = True, header=True):
-    """
-    Esta función escribe una dataframe en una hoja de google. Si la hoja que se ha pasado para escribir no existe, la crea. 
-    
-    sheets_service -- Objeto servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
-    dataframe      -- (pandas.DataFrame) Valores que se quieren llevar a la hoja.
-    spreadsheetId  -- (str) Identificador del libro en Google Drive.
-    nombreHoja     -- (str) Nombre de la hoja en la que se desea escribir dentro del libro.
-    rango          -- (str) opcional. Rango de celdas que escribir. Debe estar escrito en notación de hoja de cálculo. Ejemplos: A1, B2:C2, B4:F10
-                            Si se pasa un rango de 1 sola celda pero el dataframe tiene más de 1 valor y el parámetro replace está a true
-                            se limpia la hoja desde la celda indicada hasta el final.
-    replace        -- (boolean) opcional. Indica si se desea reemplazar el contenido completo de la hoja (y rango si se especifica).
-    header         -- (boolean) opcional. Indica si se desea incluir la cabecera cuando se escriba el dataframe.
-    """
-    import re
-    
-    sheet = sheets_service.spreadsheets()
-    #Comprobamos si la hoja existe. En caso contrario, se crea:
-    if nombreHoja not in gshObtenerNombreHojas(sheets_service, spreadsheetId):
-        gshCrearHoja(sheets_service, spreadsheetId=spreadsheetId, nombreHoja=nombreHoja)
-    #Por si viene rango, envolvemos el nombre de la hoja entre comillas
-    nombreHoja = "'" + nombreHoja + "'"
-    if not rango is None:
-        nombreHoja = nombreHoja + "!" + rango
-    
-    if replace:
-        #Si el rango es de una sola celda y el dataframe trae más de un valor se limpia la hoja entera desde esa celda hasta el final
-        if rango is not None and len(rango.split(':')) == 1 and (dataframe.shape[0]*dataframe.shape[1]) > 1 :
-            fila = re.split('(\d+)',rango)[1]
-            hoja_borrar = nombreHoja + ':'+ str(fila)
-            result = sheet.values().clear(spreadsheetId = spreadsheetId,
-                                          range = hoja_borrar).execute()
-            #del resultado capturamos cuál es la última columna y borramos por columnas
-            rango_borrado = result['clearedRange']
-            if len(rango_borrado.split(':'))>1:
-                columna = re.split( '(\d+)',  rango_borrado.split(':')[1]  )[0]
-                hoja_borrar = nombreHoja + ':'+ str(columna)
-                result = sheet.values().clear(spreadsheetId = spreadsheetId,
-                                              range = hoja_borrar).execute()
-            
-            
-        #Si el rango comprende más de una celda borramos sólo ese rango
-        else:
-            result = sheet.values().clear(spreadsheetId = spreadsheetId,
-                                          range = nombreHoja).execute()
-
-    copia = dataframe.copy()
-    #2021-12-14: Puede haber varias columnas con el mismo nombre. En ese caso, el dtype fallaría porque no devolvería una serie, sino un df. Corregimos usando iloc.
-    for col in range(len(copia.columns)):
-        if copia.iloc[:,col].dtype == 'datetime64[ns]':
-            copia.iloc[:,col] = copia.iloc[:,col].dt.strftime('%Y-%m-%d %H:%M:%S')
-    copia = copia.fillna('') #Cambio 2021-02-01. Hacer esto antes del cambio de formato implica que las columnas de tiempo, si tienen nulos, pasan a ser objects, por lo que no las convierte a texto, y la subida petaba.
-    #2021-02-01: Ahora también habría que reemplazar los NaT que hubiesen poder haber quedado kaputt:
-    copia = copia.replace('NaT','')
-    
-    lista = copia.values.tolist()
-    
-    if header:
-        lista.insert(0, dataframe.columns.tolist())
-        
-    result = sheets_service.spreadsheets().values().update(spreadsheetId = spreadsheetId,
-                                                    range = nombreHoja,
-                                                    body = {
-                                                        'majorDimension': 'ROWS',
-                                                        'values': lista
-                                                    },
-                                                    valueInputOption='RAW'
-                                                   ).execute()
-
-    return result
-
-
-#%%
-def gshEscribirRango(sheets_service, lista, spreadsheetId, nombreHoja, rango, fillna = None, header=False):
-    """
-    Esta función escribe una lista de valores en una hoja de google.
-
-    Parameters
-    ----------
-    sheets_service : service
-        Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
-    lista : [[]] o pandas dataframe
-        dataframe o lista de 2 dimensiones con los valores que se desean escribir. 
-        Si es lista, cada elemento de la lista representa una fila.
     spreadsheetId : str
         Identificador del libro en Google Drive.
     nombreHoja : str
         Nombre de la hoja en la que se desea escribir dentro del libro.
-    rango : str
-        Rango de celdas que escribir, o bien celda en la que escribir el primer valor. 
-        Debe estar escrito en notación de hoja de cálculo. Ejemplos: A1, B2:C2, B4:F10.
-    fillna : bool, optional
-        Especifica si debe cambiar los valores nulos por algo. 
-        Posibles valores: 
-            Si True cambia los nulos por cadena vacía. 
-            Si es un str, cambia los nulos por dicho valor. 
-            Si es False o None, no cambia los valores nulos. En este caso, si existe valor en una celda, no lo sobreescribirá. 
-        The default is None.
-    header : bool, optional
-        Para el caso de que se pase un dataframe en el campo 'Lista', indica si se
-        quieren escribir las cabeceras además de los valores. 
-            Si True escribe cabecera y valores empezando la cabecera en la primera celda de 'rango'.
-            Si False escribe solo los valores del dataframe empezando el primer valor en la primera celda de 'rango'
+    idVista : str o list, optional
+        ID o lista de IDs de las vistas de filtro a borrar. Si se pasa el valor None se borran TODAS las vistas 
+        de filtro de la hoja indicada. The default is None.
 
     Returns
     -------
-    result : TYPE
-        DESCRIPTION.
-
-    """
-    import pandas
-    
-    sheet = sheets_service.spreadsheets()
-    #Comprobamos si la hoja existe. En caso contrario, se crea:
-    if nombreHoja not in gshObtenerNombreHojas(sheets_service, spreadsheetId):
-        gshCrearHoja(sheets_service, spreadsheetId=spreadsheetId, nombreHoja=nombreHoja)
-    #Por si viene rango, envolvemos el nombre de la hoja entre comillas
-    nombreHoja = "'" + nombreHoja + "'!" + rango
-    
-    #Si como 'lista' me han pasado un dataframe lo convierto a lista. 
-    #Adicionalmente convierto los NaN a None para que el fillna de a continuación funcione
-    if type(lista) == pandas.core.frame.DataFrame:
-        cabecera = [[nom_columna for nom_columna in lista.columns]] 
-        lista    = [  [None if pd.isna(valor) else valor for valor in fila]   for fila in lista.values.tolist() ]
-        if header:
-            lista = cabecera + lista
-        
-    
-    if fillna is not None:
-        if type(fillna) == bool and fillna:
-            fillna = ''
-        if type(fillna) == str:
-            lista = [[fillna if v is None else v for v in l] for l in lista]
-        
-    result = sheets_service.spreadsheets().values().update(spreadsheetId = spreadsheetId,
-                                                    range = nombreHoja,
-                                                    body = {
-                                                        'majorDimension': 'ROWS',
-                                                        'values': lista
-                                                    },
-                                                    valueInputOption='RAW'
-                                                   ).execute()
-
-    return result
-
-#%%
-def gshLimpiarHoja(sheets_service, spreadsheetId, nombreHoja):
-    """
-    Esta función limpia todo el contenido de una hoja, pero no la elimina. 
-
-    Parameters
-    ----------
-    sheets_service : service
-        Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
-    spreadsheetId : str
-        Identificador del libro en Google Drive..
-    nombreHoja : str
-        Nombre de la hoja que se desea borrar.
-
-    Returns
-    -------
-    result : TYPE
-        Resultado de la ejecución del borrado.
-        None si no existe la hoja a borrar
-
-    """    
-    sheet = sheets_service.spreadsheets()
-    #Comprobamos si la hoja existe. En caso contrario, se crea:
-    if nombreHoja not in gshObtenerNombreHojas(sheets_service, spreadsheetId):
-        print('La hoja que se desea borrar no existe dentro del libro')
-        return None
-    
-    
-    result = sheet.values().clear(spreadsheetId = spreadsheetId, range = nombreHoja).execute()
-
-    return result
-
-
-def gshLimpiarRango(sheets_service, spreadsheetId, nombreHoja, rango=None):
-    """
-    Esta función limpia el contenido de un rango dentro de una hoja
-
-    Parameters
-    ----------
-    sheets_service : service
-        Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
-    spreadsheetId : str
-        Identificador del libro en Google Drive..
-    nombreHoja : str
-        Nombre de la hoja que se desea borrar.
-    rango : str, optional
-        Rango en formato hoja de cálculo a borrar. Ejemplo: 'A3:B45' o 'C:C'
-        Si vale None se borra la hoja entera.
-        The default is None
-
-    Returns
-    -------
-    result : TYPE
-        Resultado de la ejecución del borrado.
-        None si no existe la hoja a borrar
-
-    """    
-    if rango is None:
-        return gshLimpiarHoja(sheets_service, spreadsheetId, nombreHoja)
-    
-    sheet = sheets_service.spreadsheets()
-    #Comprobamos si la hoja existe. En caso contrario, se crea:
-    if nombreHoja not in gshObtenerNombreHojas(sheets_service, spreadsheetId):
-        print('La hoja que se desea borrar no existe dentro del libro')
-        return None
-    
-    
-    result = sheet.values().clear(spreadsheetId = spreadsheetId, range = "'"+nombreHoja+"'!"+rango).execute()
-
-    return result
-
-
-
-#%%
-
-def gshInsertarFilasColumnas(sheets_service, spreadsheetId, nombreHoja, idHoja=None, insertarFilas=True, despuesDe=None, numInsertar=1, copiarFormatoAnterior = True):
-    """
-    Esta función inserta filas o columnas a una hoja de google sheets
-
-    Parameters
-    ----------
-    sheets_service : service
-        Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
-    spreadsheetId : str
-        Identificador del libro en Google Drive.
-    nombreHoja : str
-        Nombre de la hoja en la que se desea escribir dentro del libro. Si el parámetro idHoja viene
-        informado, este parámetro se ingnora.
-    idHoja : int, optional
-        Si se informa el id de la hoja a escribir se ignora el nombre de hoja. The default is None.
-    insertarFilas : bool, optional
-        - True: Inserta filas
-        - False: inserta columnas 
-        The default is True.
-    despuesDe : int, list, optional
-        Índice o lista de índices (lista de int) que marcan después de qué fila/columna se quieren insertar
-        las nuevas filas/columnas. Las inserciones se realizan de tal modo que los números de fila/columna 
-        se refieren siempre a las posiciones en la hoja original, antes de hacer ninguna inserción. No debe haber
-        posiciones repetidas. Ejemplo: [7, 1, 18] <-- Bien.           [5, 12, 5, 6] <-- Mal. 5 repetido. 
-        - 0: las filas/columnas se insertan al principio de la hoja. 
-        - número>0: Las filas/columnas se insertan a continuación de esa. 
-                    Ejemplo: despuesDe=1 => la fila 1 original se mantiene donde estaba y se crea una nueva fila
-                             en la posición 2 desplazando lo que había en la posición 2 y todo lo demás hacia abajo
-        - None: Las filas/columnas se insertan al final de la HOJA. Ojo: no después de la última fila/col rellena, sino
-                al final del todo de la hoja. Si se quiere insertar tras la última rellena habrá que leer la hoja, 
-                calcular sus dimensiones y pasar despuesDe con el valor de la última fila/columna rellenas.
-        The default is None.
-    numInsertar : int, list, optional
-        Debe tener la misma dimensión que 'despuesDe'. Para cada punto en el que se va a hacer una inserción,
-        indica el número de filas/columnas que se quieren insertar. 
-        The default is 1.
-    copiarFormatoAnterior : bool, list, optional
-        Si 'despuesDe' y 'numInsertar' son int se debe pasar un bool.
-        Si 'despuesDe' y 'numInsertar' son listas se puede pasar un bool (aplicará el mismo valor para todas las inserciones)
-        o una lista con la misma longitud y aplicará a cada inserción su valor.  
-        - True:  la nueva fila/columna hereda el formato de la anterior. No válido si insertamos en posición 0.
-        - False: la nueva fila/columna hereda el formato de la posterior
-        The default is True.
-
-    Returns
-    -------
-    res : resultado de la request
-        devuelve el resultado de la request, None en caso de error.
+    bool
+        True si se ha borrado. False si hay un error o la(s) vista(s) no existen.
     """
     
-    #Revisión de parámetros de la función    
-    if idHoja is None:
-        idHoja = gshObtenerIDHoja(sheets_service, spreadsheetId, nombreHoja )
+    vistas_actuales = gshObtenerVistasFiltro(sheets_service, spreadsheetId, nombreHoja)
+    if vistas_actuales is None:
+        print("ERROR: No existe la hoja solicitada")
     
-    if idHoja is None:
-        print("gshInsertarFilasColumnas: ERROR. No se encuentra la hoja especificada")
-        return None
+    #Si no había vistas de filtro en la hoja, ya hemos acabado. 
+    if len(vistas_actuales.keys()) == 0 and idVista is None:
+        return True
     
-    #Si han llamado a la función con despuesDe como entero lo convierto a lista
-    if type(despuesDe)==int:
-        if type(numInsertar)!= int:
-            print("gshInsertarFilasColumnas: ERROR. No coinciden los tipos de dato de 'despuesDe' y 'numInsertar'")
-            return None
-        
-        despuesDe = [despuesDe]
-        numInsertar = [numInsertar]
-    
-    #Si han llamado a la función con despuesDe como lista reviso dimensiones
-    elif type(despuesDe)==list and type(numInsertar)== list:
-        if len(despuesDe) != len(numInsertar):
-            print("gshInsertarFilasColumnas: ERROR. No coinciden las longitudes de 'despuesDe' y 'numInsertar'")
-            return None
-        
-    else:
-        print("gshInsertarFilasColumnas: ERROR. Los parámetros 'despuesDe' y/o 'numInsertar' no son válidos")
-        return None
-            
-    #Reviso si en copiarFormatoAnterior me han dado un bool o una lista
-    if type(copiarFormatoAnterior) == bool:
-        copiarFormatoAnterior = [copiarFormatoAnterior for elto in despuesDe]
-    
-    elif not ( type(copiarFormatoAnterior) == list and len(copiarFormatoAnterior) == len(despuesDe) ):
-        print("gshInsertarFilasColumnas: ERROR. El parámetros 'copiarFormatoAnterior' no es válido")
-        return None 
-    
-    
-    #Junto en un diccionario los datos para asegurarme de recorrerlo en orden inverso:
-    datos_inserciones = {dsp if dsp is not None else 1E20 : {'numInsertar' : numInsertar[i], 'copiarFormatoAnterior':copiarFormatoAnterior[i]} for i, dsp in enumerate(despuesDe)}
-    lista_cols = list(datos_inserciones.keys())
-    lista_cols.sort(reverse=True)
-    
-    
-    #Generar las peticiones
-    if insertarFilas:
-        dimension = 'ROWS'
-    else:
-        dimension = 'COLUMNS'
-        
-    
-    peticiones =  []
-    
-    for col in lista_cols:
-        
-        #Si despuesDe vale None (que hemos convertido a 1E20) --> añadimos al final de la hoja
-        if col == 1E20:
-            req = {'appendDimension': {
-                        'sheetId'    : idHoja,
-                        'dimension'  : dimension,
-                        'length'     : datos_inserciones[col]['numInsertar']
-                        }               
-                   }
-            
-        #Si tenemos un punto concreto donde insertar
-        else:
-            if col<0:
-                print("gshInsertarFilasColumnas: ERROR. Se ha pasado un número menor que 0 en 'despuesDe'")
-                return None 
-            
-            #Si quiero insertar en la posición 0 => no puedo copiar el formato de lo anterior. 
-            if col == 0:
-                datos_inserciones[col]['copiarFormatoAnterior'] = False 
-                
-            req = {'insertDimension': {
-                        'range' : {
-                            'sheetId'    : idHoja,
-                            'dimension'  : dimension,
-                            'startIndex' : col,
-                            'endIndex'   : col + datos_inserciones[col]['numInsertar']
-                            },
-                        'inheritFromBefore' : datos_inserciones[col]['copiarFormatoAnterior']
-                        }                   
-                   }
-        
-        peticiones.append(req)
-    
-    
-            
-    #Finalmente lanzamos la petición
-    try:
-        res = sheets_service.spreadsheets().batchUpdate(
-            spreadsheetId = spreadsheetId,
-            body ={'requests' : peticiones}
-            ).execute()
-    except Exception as e:
-        print ("gshInsertarFilasColumnas: ERROR. La petición de inserción falló")
-        print(e)
-        return None
-    
-    return res
-
-
-#%%
-
-def gshEliminarFilasColumnas(sheets_service, spreadsheetId, nombreHoja, inicioEliminar, idHoja=None, eliminarFilas=True, numEliminar=1):
-    """
-    Esta función elimina filas o columnas de una hoja de google sheets
-
-    Parameters
-    ----------
-    sheets_service : service
-        Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
-        
-    spreadsheetId : str
-        Identificador del libro en Google Drive.
-        
-    nombreHoja : str
-        Nombre de la hoja en la que se desea escribir dentro del libro. Si el parámetro idHoja viene
-        informado, este parámetro se ingnora.
-        
-    inicioEliminar : int, list
-        Índice o lista de índices (lista de int) que marcan qué fila/columna es la primera a eliminar. Base 1. 
-        Las eliminaciones se realizan de tal modo que los números de fila/columna se refieren siempre a las 
-        posiciones en la hoja original, antes de hacer ninguna eliminación. No debe haber posiciones repetidas. 
-        Ejemplos: [7, 1, 18] <-- Bien.     [5, 12, 5, 6] <-- Mal. 5 repetido.        [2, 5, 0]<-- Mal. el 0 no vale
-        
-    idHoja : int, optional
-        Si se informa el id de la hoja a escribir se ignora el nombre de hoja. The default is None.
-        
-    eliminarFilas : bool, optional
-        - True: Elimina filas
-        - False: Elimina columnas 
-        The default is True.
-        
-    numEliminar : int, list, optional
-        Debe tener la misma dimensión que 'inicioEliminar'. Para cada punto en el que se va a hacer una eliminación,
-        indica el número de filas/columnas que se quieren eliminar. 
-        The default is 1.
-
-    Returns
-    -------
-    res : resultado de la request
-        devuelve el resultado de la request, None en caso de error.
-    """
-    
-    #Revisión de parámetros de la función    
-    if idHoja is None:
-        idHoja = gshObtenerIDHoja(sheets_service, spreadsheetId, nombreHoja )
-    
-    if idHoja is None:
-        print("gshEliminarFilasColumnas: ERROR. No se encuentra la hoja especificada")
-        return None
-    
-    #Si han llamado a la función con inicioEliminar como entero lo convierto a lista
-    if type(inicioEliminar)==int:
-        if type(numEliminar)!= int:
-            print("gshEliminarFilasColumnas: ERROR. No coinciden los tipos de dato de 'inicioEliminar' y 'numEliminar'")
-            return None
-        
-        inicioEliminar = [inicioEliminar]
-        numEliminar = [numEliminar]
-    
-    #Si han llamado a la función con inicioEliminar como lista reviso dimensiones
-    elif type(inicioEliminar)==list and type(numEliminar)== list:
-        if len(inicioEliminar) != len(numEliminar):
-            print("gshEliminarFilasColumnas: ERROR. No coinciden las longitudes de 'inicioEliminar' y 'numEliminar'")
-            return None
-        
-    else:
-        print("gshEliminarFilasColumnas: ERROR. Los parámetros 'inicioEliminar' y/o 'numEliminar' no son válidos")
-        return None
-            
-    
-    
-    
-    #Junto en un diccionario los datos para asegurarme de recorrerlo en orden inverso:
-    datos_eliminaciones = {iniElim : numEliminar[i] for i, iniElim in enumerate(inicioEliminar)}
-    lista_cols = list(datos_eliminaciones.keys())
-    lista_cols.sort(reverse=True)
-    
-    
-    #Generar las peticiones
-    if eliminarFilas:
-        dimension = 'ROWS'
-    else:
-        dimension = 'COLUMNS'
-        
-    
-    peticiones =  []
-    
-    for col in lista_cols:            
-        
-        if col <= 0:
-            print("gshEliminarFilasColumnas: ERROR. Se ha pasado un número menor o igual que 0 en 'inicioEliminar'")
-            return None  
-            
-        req = {'deleteDimension': {
-                    'range' : {
-                        'sheetId'    : idHoja,
-                        'dimension'  : dimension,
-                        'startIndex' : col-1, #Para eliminar usa base 0... 
-                        'endIndex'   : col + datos_eliminaciones[col]-1
-                        }
-                    }               
-               }
-        
-        peticiones.append(req)
-    
-    
-            
-    #Finalmente lanzamos la petición
-    try:
-        res = sheets_service.spreadsheets().batchUpdate(
-            spreadsheetId = spreadsheetId,
-            body ={'requests' : peticiones}
-            ).execute()
-    except Exception as e:
-        print ("gshEliminarFilasColumnas: ERROR. La petición de eliminación falló")
-        print(e)
-        return None
-    
-    return res
-
-
-
-
-#%%
-def gshLeerHoja(sheets_service, spreadsheetId, nombreHoja, rango = None, header = True, formato_valores = 'UNFORMATTED_VALUE', formato_fechas = 'FORMATTED_STRING'):
-    """
-    Esta función lee el contenido de un rango de una hoja de un libro Google. Basada en el servicio: https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets.values/get
-
-    Parameters
-    ----------
-    sheets_service : object service
-        Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
-    spreadsheetId : str
-        Identificador del libro en Google Drive.
-    nombreHoja : str
-        Nombre de la hoja en la que se desea crear dentro del libro.
-    rango : str, optional
-        Rango de celdas que leer. Debe estar escrito en notación de hoja de cálculo. Ejemplos: 'A1', 'B2:C2', 'B4:F10'. 
-        The default is None.
-    header : (bool | list) opcional, default=True
-        Indica si el rango a leer tiene cabecera. Si es True, asume que será la primera fila del rango. 
-        Si es una lista con más de un elemento, devolverá un dataframe con multiíndice. 
-        Los índices van referenciados a la tabla, no a la fila de la gsheet.
-        Esto es, si se indica rango='C3:F10', y header=[0,1], la cabecera estará formada por las filas 3 y 4.
-    formato_valores : str, optional, default = 'UNFORMATTED_VALUE'
-        Indica 'FORMATTED_VALUE' si debe traer el valor tal cual se representa en la gsheet (con el formato de moneda, por ejemplo), o 'UNFORMATTED_VALUE'si debe recuperar el valor original.
-    formato_fechas: str, optional, default = 'FORMATTED_STRING'
-        Indica cómo debe representar las fechas en la salida. Posibles valores: 'SERIAL_NUMBER' o 'FORMATTED_STRING' (https://developers.google.com/sheets/api/reference/rest/v4/DateTimeRenderOption)
-
-    Returns
-    -------
-    df : pandas.DataFrame
-        DataFrame con los valores leídos.
-
-    """
-    import pandas as pd
-    # Call the Sheets API
-    sheet = sheets_service.spreadsheets()
-    nombreHoja = "'" + nombreHoja + "'"
-    if not rango is None:
-        nombreHoja = nombreHoja + "!" + rango
-       
-    result = sheet.values().get(
-        spreadsheetId        = spreadsheetId,
-        range                = nombreHoja,
-        valueRenderOption    = formato_valores,
-        dateTimeRenderOption = formato_fechas
-    ).execute()
-    values = result.get('values', [])
-
-    if not values:
-        print('No data found.')
-        return None
-    else:
-        if (type(header) == bool and header):
-            header = [0]
-        if type(header) == list:
-            if len(header) > 1:
-                cabecera = [values[i] for i in header]
-                cols = pd.MultiIndex.from_tuples([tuple(sub[i] for sub in cabecera) for i in range(len(cabecera[0]))])
-            else:
-                cols = values[header[0]]
-            data = values[max(header)+1:]
-            len_data = max([len(fila) for fila in data] + [0])
-            while len(cols)<len_data:
-                cols.append('')
-                
-            while len(data)>0 and len(data[0])<len(cols):
-                data[0].append(None)
-                
-            df = pd.DataFrame.from_records(data=data, columns = cols)
-        else:
-            df = pd.DataFrame.from_records(data=values)
-        
-        
-        return df
-#%%
-def gshObtenerNombreHojas(sheets_service, spreadsheetId):
-    """
-    Esta función devuelve los nombres de hojas que tiene un libro de Google.
-
-    INPUT:
-    - sheets_service = Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
-    - spreadsheetId  = str, Identificador del libro en Google Drive.
-    
-    returns list con los nombres de las hojas.
-    """
-    # Call the Sheets API
-    sheet_metadata = sheets_service.spreadsheets().get(spreadsheetId=spreadsheetId).execute()
-    sheets = sheet_metadata.get('sheets', '')
-    sheetnames = []
-    for sheet in sheets:
-        sheetnames.append(sheet['properties']['title'])
-    return sheetnames
-
-
-#%%
-
-def gshObtenerNombreIdHojas(sheets_service, spreadsheetId):
-    """
-    Esta función devuelve un diccionario con claves los nombres de hojas que tiene un libro de Google y valor sus IDs.
-
-    Parameters
-    ----------
-    sheets_service : service object
-        Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente..
-    spreadsheetId : str
-        Identificador del libro en Google Drive.
-
-    Returns
-    -------
-    sheetNamesIDs : dict
-        Diccionario con los nombres de hojas como claves y los IDs como valores
-    """
-    
-    # Call the Sheets API
-    sheet_metadata = sheets_service.spreadsheets().get(spreadsheetId=spreadsheetId).execute()
-    sheets = sheet_metadata.get('sheets', '')
-    sheetNamesIDs = dict()
-    for sheet in sheets:
-        sheetNamesIDs[ sheet['properties']['title'] ] = sheet['properties']['sheetId']
-    return sheetNamesIDs
-
-
-#%%
-def gshObtenerIDHoja(sheets_service, spreadsheetId, nombreHoja):
-    """
-    Devuelve el ID de una hoja concreta dentro de una spreadsheet.
-    
-    Parameters
-    ----------
-    sheets_service : service object
-        Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
-    spreadsheetId : str
-        Identificador del libro en Google Drive.
-    nombreHoja : str
-        Nombre de la hoja buscada.      
-    
-    Returns
-    -------
-    str
-        Id de la hoja dentro de la spreadsheet. None si no se localiza
-    """   
-    
-    #Localizamos la hoja pedida y capturamos su ID y el número de columnas
-    sheet_metadata = sheets_service.spreadsheets().get(spreadsheetId=spreadsheetId).execute()
-    sheets = sheet_metadata.get('sheets', '')
-    
-    sheetId = None
-    for sheet in sheets:
-        if sheet['properties']['title'] == nombreHoja :
-            sheetId = sheet['properties']['sheetId']
-            break
-    
-    if sheetId is None:
-        print("La hoja con el nombre solicitado no existe")
-        
-    return sheetId
-
-
-
-#%%    
-def gshOrdenarHojas(sheets_service, spreadsheetId, nombresHojasOrdenadas):
-    """
-    Ordena las hojas dentro de una spreadsheet. Recibe una lista con los nombres de las 
-    hojas en el orden deseado. El resto de hojas de la spreadsheet que no aparezcan en 
-    la lista quedarán al final en el mismo orden en el que estén al entrar en la función.
-
-    Parameters
-    ----------
-    sheets_service : service object
-        Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
-    spreadsheetId : str
-        Identificador del libro en Google Drive.
-    nombresHojasOrdenadas : list
-        Lista con los nombres de hoja en el orden que se desean.
-
-    Returns
-    -------
-    res : json
-        resultado de la ejecución.
-    """
-    if type(nombresHojasOrdenadas) != list:
-        print ('Se espera una lista con los nombres de hoja en el orden que se quieren')
-        return None
-        
-    #Localizamos las propiedades de todas las hojas
-    sheet_metadata = sheets_service.spreadsheets().get(spreadsheetId=spreadsheetId).execute()
-    sheets = sheet_metadata.get('sheets', '')
-    sheet_names = [sheet['properties']['title'] for sheet in sheets]
-    
-    #Para cada hoja de la lista actualizamos su índice y lo metemos en la lista de requests
-    indice=0
     requests = []
-    for nombreHoja in nombresHojasOrdenadas :
-        if nombreHoja not in sheet_names:
-            continue
-        
-        properties = sheets[sheet_names.index(nombreHoja)]['properties']
-        properties['index'] = indice
-        req = {'updateSheetProperties': {
-                    'properties' : properties,
-                    'fields'     : '*'
-                    }               
-               }
-        requests.append(req)
-        indice += 1
-        
-    #Para aquellas hojas del libro que no se hayan pasado en la lista ordenada las dejamos al final en el orden que vienen
-    for nombreHoja in sheet_names:
-        if nombreHoja not in nombresHojasOrdenadas:
-            properties = sheets[sheet_names.index(nombreHoja)]['properties']
-            properties['index'] = indice
-            req = {'updateSheetProperties': {
-                        'properties' : properties,
-                        'fields'     : '*'
-                        }               
-                    }
-            requests.append(req)
-            indice += 1
+    if idVista is None:
+        for vista in vistas_actuales.values():
+            requests.append( {'deleteFilterView': { 'filterId': str(vista) }  }  )
+                
+    elif type(idVista) == str:
+        if (int(idVista) not in vistas_actuales.values() ) :
+            print("ERROR: La vista con el id solicitado no existe")
+            return False
+        else:
+            requests.append( {'deleteFilterView': { 'filterId': str(idVista) }  }  )
             
-    #Finalmente lanzamos la petición
-    res = sheets_service.spreadsheets().batchUpdate(
-        spreadsheetId = spreadsheetId,
-        body ={'requests' : requests}
-        ).execute()
+    elif type(idVista) == list:
+        for vista in idVista:
+            if (int(vista) not in vistas_actuales.values() ) :
+                print("ERROR: La vista con el id solicitado no existe")
+                return False
+            else:
+                requests.append( {'deleteFilterView': { 'filterId': str(vista) }  }  )
+    else:
+        print("ERROR: idVista tiene un tipo no admitido")
+        return False
     
-    return res
-
-
-
-#%%    
-def gshObtenerVistasFiltro(sheets_service, spreadsheetId, nombreHoja):
-    """
-    Esta función devuelve un diccionario con las vistas de filtro que hay en una hoja de un libro google.
-    La clave del diccionario es el NOMBRE de la vista de filtro. El contenido es el id de la vista de filtro.
-    En caso de error, la función devuelve None.
-    Si la hoja no tiene ninguna vista de filtro, se devuelve un diccionario vacío. 
+            
+    #Ahora realmente ejecutamos la solicitud.
+    try:
+        body = {'requests': requests}
+        FilterViewResponse = sheets_service.spreadsheets().batchUpdate(spreadsheetId=spreadsheetId, body=body).execute()
+    except Exception as e:
+        print("Error borrando la vista de filtro:", e)
+        return False
     
-    INPUT:
-    - sheets_service = Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
-    - spreadsheetId = str, Identificador del libro en Google Drive.
-    - nombreHoja = str, Nombre de la hoja en la que se desea escribir dentro del libro.
-    """
-    
-    #Localizamos las propiedades de todas las hojas
-    sheet_metadata = sheets_service.spreadsheets().get(spreadsheetId=spreadsheetId).execute()
-    sheets = sheet_metadata.get('sheets', '')
-    sheet_names = [sheet['properties']['title'] for sheet in sheets]
-    
-    #Comprobamos si la hoja existe. En caso contrario, se devuelve None:
-    if nombreHoja not in sheet_names:
-        return None
-    
-    #Comprobamos en qué posición está la hoja solicitada. No va a fallar porque en el if anterior aseguramos que está.
-    indice_hoja = sheet_names.index(nombreHoja)
-    
-        
-    #Si esa hoja en particular no tiene vistas de filtro, devolvemos diccionario vacío.
-    if 'filterViews' not in sheet_metadata['sheets'][indice_hoja].keys():
-        return dict()
-    
-    vistas_filtro = sheet_metadata['sheets'][indice_hoja]['filterViews']
-    
-    #Pasamos las vistas a un diccionario con clave el nombre de la vista y dato el id.
-    result = dict()
-    for filtro in vistas_filtro:
-        result[filtro['title']] = filtro['filterViewId']
-
-    return result
-
+    return True
 
 #%%
-def gshListarOpcionesFiltro():
-    opciones_condicion = ['CONDITION_TYPE_UNSPECIFIED', 
-                          'NUMBER_GREATER', 'NUMBER_GREATER_THAN_EQ', 'NUMBER_LESS', 'NUMBER_LESS_THAN_EQ', 'NUMBER_EQ', 'NUMBER_NOT_EQ', 'NUMBER_BETWEEN', 'NUMBER_NOT_BETWEEN',
-                          'TEXT_CONTAINS', 'TEXT_NOT_CONTAINS', 'TEXT_STARTS_WITH', 'TEXT_ENDS_WITH', 'TEXT_EQ', 'TEXT_IS_EMAIL', 'TEXT_IS_URL', 
-                          'DATE_EQ', 'DATE_BEFORE', 'DATE_AFTER', 'DATE_ON_OR_BEFORE', 'DATE_ON_OR_AFTER', 'DATE_BETWEEN', 'DATE_NOT_BETWEEN', 'DATE_IS_VALID', 
-                          #'ONE_OF_RANGE', 'ONE_OF_LIST', #Not supported in filters
-                          'BLANK', 'NOT_BLANK', 
-                          #'CUSTOM_FORMULA', 'BOOLEAN'  #Not supported in filters
-                          ]
-    return opciones_condicion
-       
+def gshCombinarCeldas(sheets_service, spreadsheetId:str, nombreHoja:str, filaInicio:int, colInicio:int, filaFin:int, colFin:int, modo:str = 'completo'):
+    """
+    Esta funcion combina celdas.
+
+    Parameters
+    ----------
+    sheets_service : service object Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
+    spreadsheetId  : str Identificador del libro en Google Drive.
+    nombreHoja     : str Nombre de la hoja en la que se desea escribir dentro del libro.
+    filaInicio     : int número de fila (basado en 0) de la celda superior izquierda del rango que se quiere combinar
+    colInicio      : int número de columna (basado en 0) de la celda superior izquierda del rango que se quiere combinar
+    filaFin        : int número de fila (basado en 0) de la celda inferior derecha del rango que se quiere combinar
+    colFin         : int número de fila (basado en 0) de la celda inferior derecha del rango que se quiere combinar
+    modo           : str cómo se quiere realizar la combinación: 
+                     - 'completo' (por defeto): genera una única celda combinada
+                     - 'filas'                : genera una celda combinada por cada fila
+                     - 'columnas'             : genera una celda combinada por cada columna.
+    
+    Returns
+    -------
+    bool
+        True si se ha combinado. False si hay un error.
+    """
+    hojaId = gshObtenerIDHoja(sheets_service=sheets_service, spreadsheetId=spreadsheetId, nombreHoja=nombreHoja)
+    if modo == 'completo':
+        modo = 'MERGE_ALL'
+    elif modo == 'filas':
+        modo = 'MERGE_ROWS'
+    else:
+        modo = 'MERGE_COLUMNS'
+        
+    request = { 
+        'requests' : [{ 
+            'mergeCells' : {
+                'range' : {
+                    'sheetId'          : hojaId,
+                    'startRowIndex'    : filaInicio,
+                    'endRowIndex'      : filaFin,
+                    'startColumnIndex' : colInicio,
+                    'endColumnIndex'   : colFin
+                },
+                'mergeType' : modo
+            }
+        }] 
+    }
+    
+    try:
+        sheets_service.spreadsheets().batchUpdate(spreadsheetId=spreadsheetId, body=request).execute()
+    except Exception as e:
+        print("Error combinando celdas:", e)
+        return False
+    
+    return True
 #%%
 def gshCrearActualizarVistaFiltro(sheets_service, spreadsheetId, nombreHoja, 
                                   nombreVista , idVista=None, primeraCelda = 'A1', condiciones = [], idHoja = None):
@@ -1738,12 +997,307 @@ def gshCrearActualizarVistaFiltro(sheets_service, spreadsheetId, nombreHoja,
     
     return respuesta
     
-
+#%%
+def gshCrearHoja(sheets_service, spreadsheetId, nombreHoja, nFilas = 100, nCols = 30):
+    """
+    Esta función crea una nueva hoja en un libro de google.
+    
+    sheets_service = Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
+    spreadsheetId = str, Identificador del libro en Google Drive.
+    nombreHoja = str, Nombre de la hoja en la que se desea crear dentro del libro.
+    nFilas = int, opcional. Número de filas que se quiere que tenga la nueva hoja (por defecto 100)
+    nCols = int, opcional. Número de columnas que se quiere que tenga la nueva hoja (por defecto 30)
+    """
+    if nombreHoja not in gshObtenerNombreHojas(sheets_service, spreadsheetId):
+        res = sheets_service.spreadsheets().batchUpdate(spreadsheetId = spreadsheetId,
+                                                 body={
+                                                     'requests': [
+                                                         {'addSheet':{
+                                                             'properties': {
+                                                                 'title': nombreHoja,
+                                                                 'gridProperties': {
+                                                                     'rowCount':nFilas,
+                                                                     'columnCount':nCols
+                                                                 }
+                                                             }
+                                                         }
+                                                         }
+                                                     ]
+                                                 }
+                                                ).execute()
+        return res
+    else:
+        print('La hoja ya existe, no se realiza ninguna acción')
+        return None
 
 #%%
-def gshBorrarVistaFiltro(sheets_service, spreadsheetId, nombreHoja, idVista=None):
+def gshCrearLibro(sheets_service, nombreLibro, nombreHoja = None):
     """
-    Esta funcion borra una o varias vistas de filtro, si existen. Devuelve True si se borra bien, False si hay un error o no existe.
+    Esta función crea un nuevo libro GSheets y lo deja en "Mi unidad".
+
+    sheets_service = Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
+    nombreLibro = str, Nombre del libro.
+    nombreHoja = str, opcional. Nombre de la única hoja que tendrá el libro.
+    
+    returns objeto dict_like con los detalles del libro.
+    """
+    spreadsheet_body = {
+      "properties": {
+        "title": nombreLibro,
+        "locale": ""
+      },
+    }
+    if nombreHoja is not None:
+        spreadsheet_body['sheets'] = [
+            {
+                "properties": {
+                    "title": nombreHoja
+                }
+            }
+        ]
+
+    request = sheets_service.spreadsheets().create(body=spreadsheet_body)
+    return request.execute()
+
+#%%
+def gshDescargarHoja(sheets_service, spreadsheetid, hojaId = None, nombreHoja = None, ficheroDescarga = None, tipo='pdf', sobreescribir = False, vertical = True, size = 'A4'):
+    """
+    Esta función descargará una sola hoja de una gsheet a un fichero.
+    sheets_service  -- Objeto servicio con permisos de lectura en Google Sheets. Se obtiene con el método connect.
+    spreadsheetid   -- (str) Identificador de la gsheet en Drive.
+    hojaId          -- (str) Identificador de la hoja (gid)
+    nombreHoja      -- (str) Nombre de la hoja. Si se proporciona hojaId, no se hace caso a este parámetro.
+    ficheroDescarga -- (str) Fichero de descarga en la que dejar el fichero. Si no se indica, lo dejará en la carpeta de trabajo con el nombre de la gsheet y el id de la hoja descargada.
+    tipo            -- (str) Formato de exportación. Por defecto, 'pdf'. Admite también 'xlsx' y 'csv'
+    sobreescribir   -- (bool) Default False. Indica si debe machacar el fichero en caso de que exista, o crear un nombre nuevo en su lugar.
+    vertical        -- (bool) Default True. Indica si la exportación se debe realizar (si tipo es 'pdf') en vertical (True) o apaisado (False) 
+    size            -- (str) Tamaño del folio a descargar (si tipo es 'pdf')
+    
+    return          -- (str) Ruta completa del fichero descargado.
+    """
+    import urllib.parse
+    import os
+
+    result = sheets_service.spreadsheets().get(spreadsheetId = spreadsheetid).execute()
+    spreadsheetUrl = result['spreadsheetUrl']
+    if nombreHoja is None and hojaId is None:
+        print('Necesito o el id de la hoja (gid) o el nombre de la misma')
+        return None
+    elif hojaId is None:
+        for sheet in result['sheets']:
+            if sheet['properties']['title'] == nombreHoja:
+                hojaId = sheet['properties']['sheetId']
+    if hojaId is None:
+        print('Hoja no encontrada')
+        return None
+    
+    exportUrl = spreadsheetUrl.replace("/edit", '/export')
+    params = {
+        'format': tipo,
+        'gid': hojaId,
+    } 
+    if tipo == 'pdf':
+        if not vertical:
+            params['portrait'] = False
+        params['size'] =  size
+        
+    queryParams = urllib.parse.urlencode(params)
+    url = exportUrl + '&' + queryParams
+    
+    resp, content = sheets_service._http.request(url)
+    if ficheroDescarga is None:
+        ficheroDescarga = result['properties']['title'] + '_' + str(hojaId) + '.' + tipo
+    if not sobreescribir:
+        if os.path.isfile(ficheroDescarga):
+            fichero = os.path.splitext(ficheroDescarga)
+            i = 1
+            while True:
+                rutaNueva = fichero[0] + ' (' + str(i) + ')' + fichero[1]
+                if not os.path.isfile(rutaNueva):
+                    ficheroDescarga = rutaNueva
+                    break
+                i=i+1
+
+    with open(ficheroDescarga, 'wb') as descarga:
+        descarga.write(content)
+    return ficheroDescarga
+    
+#%%
+def gshDuplicarHoja(sheets_service, spreadsheetId, nombreHojaOrig, nombreHojaNueva, indiceNuevaHoja = None):
+    """
+    Esta función duplica una hoja en un libro de google.
+
+    Parameters
+    ----------
+    sheets_service : Service
+        Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
+    spreadsheetId : str
+        Identificador del libro en Google Drive.
+    nombreHojaOrig : str
+        Nombre de la hoja que se va a copiar.
+    nombreHojaNueva : str
+        Nombre de la hoja resultante.
+    indiceNuevaHoja : int, default None
+        Indice que debe ocupar la nueva hoja (base 0). Si no se pasa, la nueva hoja será la primera. 
+
+    Returns
+    -------
+    res : json
+        resultado de la ejecución. None en caso de error.
+    """
+    sheet_metadata = sheets_service.spreadsheets().get(spreadsheetId=spreadsheetId).execute()
+    sheets = sheet_metadata.get('sheets', '')
+    hojasActualesLibro = dict()
+    for sheet in sheets:
+        hojasActualesLibro[ sheet['properties']['title'] ] = sheet['properties']['sheetId']
+    
+    
+    
+    if nombreHojaOrig not in hojasActualesLibro.keys():
+        print('No se encuentra la hoja', nombreHojaOrig)
+        return None
+    
+    elif nombreHojaNueva not in hojasActualesLibro:
+        res = sheets_service.spreadsheets().batchUpdate(spreadsheetId = spreadsheetId,
+                                                        body={
+                                                            'requests': [
+                                                                {'duplicateSheet':{
+                                                                    "sourceSheetId"   : hojasActualesLibro[nombreHojaOrig],
+                                                                    "insertSheetIndex": indiceNuevaHoja,
+                                                                    "newSheetName"    : nombreHojaNueva
+                                                                    }
+                                                                }
+                                                            ]
+                                                            }
+                                                        ).execute()
+        return res
+    else:
+        print('La hoja', nombreHojaNueva, 'ya existe, no se realiza ninguna acción')
+
+#%%
+def gshEliminarFilasColumnas(sheets_service, spreadsheetId, nombreHoja, inicioEliminar, idHoja=None, eliminarFilas=True, numEliminar=1):
+    """
+    Esta función elimina filas o columnas de una hoja de google sheets
+
+    Parameters
+    ----------
+    sheets_service : service
+        Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
+        
+    spreadsheetId : str
+        Identificador del libro en Google Drive.
+        
+    nombreHoja : str
+        Nombre de la hoja en la que se desea escribir dentro del libro. Si el parámetro idHoja viene
+        informado, este parámetro se ingnora.
+        
+    inicioEliminar : int, list
+        Índice o lista de índices (lista de int) que marcan qué fila/columna es la primera a eliminar. Base 1. 
+        Las eliminaciones se realizan de tal modo que los números de fila/columna se refieren siempre a las 
+        posiciones en la hoja original, antes de hacer ninguna eliminación. No debe haber posiciones repetidas. 
+        Ejemplos: [7, 1, 18] <-- Bien.     [5, 12, 5, 6] <-- Mal. 5 repetido.        [2, 5, 0]<-- Mal. el 0 no vale
+        
+    idHoja : int, optional
+        Si se informa el id de la hoja a escribir se ignora el nombre de hoja. The default is None.
+        
+    eliminarFilas : bool, optional
+        - True: Elimina filas
+        - False: Elimina columnas 
+        The default is True.
+        
+    numEliminar : int, list, optional
+        Debe tener la misma dimensión que 'inicioEliminar'. Para cada punto en el que se va a hacer una eliminación,
+        indica el número de filas/columnas que se quieren eliminar. 
+        The default is 1.
+
+    Returns
+    -------
+    res : resultado de la request
+        devuelve el resultado de la request, None en caso de error.
+    """
+    
+    #Revisión de parámetros de la función    
+    if idHoja is None:
+        idHoja = gshObtenerIDHoja(sheets_service, spreadsheetId, nombreHoja )
+    
+    if idHoja is None:
+        print("gshEliminarFilasColumnas: ERROR. No se encuentra la hoja especificada")
+        return None
+    
+    #Si han llamado a la función con inicioEliminar como entero lo convierto a lista
+    if type(inicioEliminar)==int:
+        if type(numEliminar)!= int:
+            print("gshEliminarFilasColumnas: ERROR. No coinciden los tipos de dato de 'inicioEliminar' y 'numEliminar'")
+            return None
+        
+        inicioEliminar = [inicioEliminar]
+        numEliminar = [numEliminar]
+    
+    #Si han llamado a la función con inicioEliminar como lista reviso dimensiones
+    elif type(inicioEliminar)==list and type(numEliminar)== list:
+        if len(inicioEliminar) != len(numEliminar):
+            print("gshEliminarFilasColumnas: ERROR. No coinciden las longitudes de 'inicioEliminar' y 'numEliminar'")
+            return None
+        
+    else:
+        print("gshEliminarFilasColumnas: ERROR. Los parámetros 'inicioEliminar' y/o 'numEliminar' no son válidos")
+        return None
+            
+    
+    
+    
+    #Junto en un diccionario los datos para asegurarme de recorrerlo en orden inverso:
+    datos_eliminaciones = {iniElim : numEliminar[i] for i, iniElim in enumerate(inicioEliminar)}
+    lista_cols = list(datos_eliminaciones.keys())
+    lista_cols.sort(reverse=True)
+    
+    
+    #Generar las peticiones
+    if eliminarFilas:
+        dimension = 'ROWS'
+    else:
+        dimension = 'COLUMNS'
+        
+    
+    peticiones =  []
+    
+    for col in lista_cols:            
+        
+        if col <= 0:
+            print("gshEliminarFilasColumnas: ERROR. Se ha pasado un número menor o igual que 0 en 'inicioEliminar'")
+            return None  
+            
+        req = {'deleteDimension': {
+                    'range' : {
+                        'sheetId'    : idHoja,
+                        'dimension'  : dimension,
+                        'startIndex' : col-1, #Para eliminar usa base 0... 
+                        'endIndex'   : col + datos_eliminaciones[col]-1
+                        }
+                    }               
+               }
+        
+        peticiones.append(req)
+    
+    
+            
+    #Finalmente lanzamos la petición
+    try:
+        res = sheets_service.spreadsheets().batchUpdate(
+            spreadsheetId = spreadsheetId,
+            body ={'requests' : peticiones}
+            ).execute()
+    except Exception as e:
+        print ("gshEliminarFilasColumnas: ERROR. La petición de eliminación falló")
+        print(e)
+        return None
+    
+    return res
+
+#%%
+def gshEliminarFormatoRango (sheets_service, spreadsheetId, nombreHoja, rango, idHoja = None):
+    """
+    Elimina el formato de un rango de celdas concreto, dejando el formato por defecto.
 
     Parameters
     ----------
@@ -1753,59 +1307,1147 @@ def gshBorrarVistaFiltro(sheets_service, spreadsheetId, nombreHoja, idVista=None
         Identificador del libro en Google Drive.
     nombreHoja : str
         Nombre de la hoja en la que se desea escribir dentro del libro.
-    idVista : str o list, optional
-        ID o lista de IDs de las vistas de filtro a borrar. Si se pasa el valor None se borran TODAS las vistas 
-        de filtro de la hoja indicada. The default is None.
+    rango : str 
+        Rango a aplicar el formato con notación de la sheet. Ejemplo: 'C6:O12'
+    idHoja : str, optional
+        Id de la hoja dentro de la spreadsheet. Si se especifica este parámetro se ignora el 'nombreHoja'. The default is None.
 
     Returns
     -------
     bool
-        True si se ha borrado. False si hay un error o la(s) vista(s) no existen.
+        True si ha funcionado correctamente, False en caso contrario.
+
     """
-    
-    vistas_actuales = gshObtenerVistasFiltro(sheets_service, spreadsheetId, nombreHoja)
-    if vistas_actuales is None:
-        print("ERROR: No existe la hoja solicitada")
-    
-    #Si no había vistas de filtro en la hoja, ya hemos acabado. 
-    if len(vistas_actuales.keys()) == 0 and idVista is None:
-        return True
-    
-    requests = []
-    if idVista is None:
-        for vista in vistas_actuales.values():
-            requests.append( {'deleteFilterView': { 'filterId': str(vista) }  }  )
-                
-    elif type(idVista) == str:
-        if (int(idVista) not in vistas_actuales.values() ) :
-            print("ERROR: La vista con el id solicitado no existe")
-            return False
-        else:
-            requests.append( {'deleteFilterView': { 'filterId': str(idVista) }  }  )
-            
-    elif type(idVista) == list:
-        for vista in idVista:
-            if (int(vista) not in vistas_actuales.values() ) :
-                print("ERROR: La vista con el id solicitado no existe")
-                return False
-            else:
-                requests.append( {'deleteFilterView': { 'filterId': str(vista) }  }  )
-    else:
-        print("ERROR: idVista tiene un tipo no admitido")
+    if idHoja is None:
+        idHoja = gshObtenerIDHoja(sheets_service, spreadsheetId, nombreHoja) 
+        
+    if idHoja is None:
+        print("No se puede formatear la hoja")
         return False
     
-            
-    #Ahora realmente ejecutamos la solicitud.
+    rango_req = gshTraducirRango(rangoLetras=rango, sheetId=idHoja)
+    if rango_req is None:
+        print("No se ha proporcionado un rango correcto para el formato")
+        return False 
+    
+    request_formato = { 'requests' : [
+        { 'repeatCell' : {
+            'range' : rango_req,            
+            'cell' : {
+                'userEnteredFormat': None
+                }, #end Cell            
+            'fields' : 'userEnteredFormat'
+            }
+        } #end RepeatCell      
+        ] }  
+    
     try:
-        body = {'requests': requests}
-        FilterViewResponse = sheets_service.spreadsheets().batchUpdate(spreadsheetId=spreadsheetId, body=body).execute()
+        sheets_service.spreadsheets().batchUpdate(spreadsheetId=spreadsheetId, body=request_formato).execute()
     except Exception as e:
-        print("Error borrando la vista de filtro:", e)
+        print("Error formateando la hoja:", e)
         return False
     
     return True
 
+#%% 
+def gshEliminarRangoProtegido(sheets_service, spreadsheetId, idRango):
+    """
+    Elimina uno varios rangos protegidos de un libro.
 
+    Parameters
+    ----------
+    sheets_service : service object
+        Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
+    spreadsheetId : str
+        Identificador del libro en Google Drive.
+    idRango : str o list
+        ID o lista de IDs de los rangos protegidos que se quieren eliminar
+
+    Returns
+    -------
+    bool
+        True si todo ha ido bien, False en caso de error
+
+    """
+    lista_requests = []
+    
+    if type(idRango) == str:
+        idRango = [idRango]
+        
+    for idRg in idRango:
+        req = { "deleteProtectedRange" : {"protectedRangeId": idRg }  }
+        lista_requests.append(req)
+        
+    try: 
+        body = {'requests': lista_requests}
+        respuesta = sheets_service.spreadsheets().batchUpdate(spreadsheetId=spreadsheetId, body=body).execute()
+
+    except Exception as e:
+        print("Error eliminando rangos protegidos:", e)
+        return False
+    
+    return True
+    
+#%%
+def gshEliminarFormatosCondicionalesHoja(sheets_service, spreadsheetId, nombreHoja):
+    """
+    Elimina todas las reglas de formato condicional de una hoja
+
+    Parameters
+    ----------
+    sheets_service : service object
+        Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
+    spreadsheetId : str
+        Identificador del libro en Google Drive.
+    nombreHoja : str
+        Nombre de la hoja en la que se desean borrar todos los formatos condicionales.
+
+    Returns
+    -------
+    bool
+        True si ha ido todo bien, False en caso de error.
+
+    """
+    #Localizamos las propiedades de todas las hojas
+    sheet_metadata = sheets_service.spreadsheets().get(spreadsheetId=spreadsheetId).execute()
+    sheets = sheet_metadata.get('sheets', '')
+    sheet_names = [sheet['properties']['title'] for sheet in sheets]
+    
+    #Comprobamos si la hoja existe. En caso contrario, se devuelve None:
+    if nombreHoja not in sheet_names:
+        return False
+    
+    #Comprobamos en qué posición está la hoja solicitada. No va a fallar porque en el if anterior aseguramos que está.
+    indice_hoja = sheet_names.index(nombreHoja)
+    id_hoja = sheet_metadata['sheets'][indice_hoja]['properties']['sheetId']
+    
+        
+    #Si esa hoja en particular no tiene formatos condicionales no hay que hacer nada.
+    if 'conditionalFormats' not in sheet_metadata['sheets'][indice_hoja].keys():
+        return True
+    
+    reglas_condic = sheet_metadata['sheets'][indice_hoja]['conditionalFormats']
+    
+    requests= []
+    for indice, regla in enumerate(reglas_condic):
+        req = {
+            "deleteConditionalFormatRule": {
+                "index": indice,
+                "sheetId": id_hoja
+                }
+             }
+        requests.append(req)
+        
+    requests.reverse()
+    request_final = { 'requests' : requests}  
+    
+    try:
+        sheets_service.spreadsheets().batchUpdate(spreadsheetId=spreadsheetId, body=request_final).execute()
+    except Exception as e:
+        print("Error borrando formatos condicionales de la hoja:", e)
+        return False
+    
+    return True
+    
+#%%
+def gshEliminarValidacionRango(sheets_service, spreadsheetId, nombreHoja, rango, idHoja = None):
+    """
+    Elimina todas las fórmulas de validación del rango proporcionado.
+
+    Parameters
+    ----------
+    sheets_service : service object
+        Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
+    spreadsheetId : str
+        Identificador del libro en Google Drive.
+    nombreHoja : str
+        Nombre de la hoja en la que se desea escribir dentro del libro.
+    rango : str 
+        Rango donde eliminar las validaciones con notación de la sheet. Ejemplo: 'C6:O12'
+    idHoja : str, optional
+        Id de la hoja dentro de la spreadsheet. Si se especifica este parámetro se ignora el 'nombreHoja'. The default is None.
+
+    Returns
+    -------
+    bool
+        True si todo ha ido correctamente, False en otro caso.
+
+    """
+    if idHoja is None:
+        idHoja = gshObtenerIDHoja(sheets_service, spreadsheetId, nombreHoja) 
+        
+    if idHoja is None:
+        print("No se puede eliminar la validacion")
+        return False
+    
+    rango_req = gshTraducirRango(rangoLetras=rango, sheetId=idHoja)
+    if rango_req is None:
+        print("No se ha proporcionado un rango correcto para el formato")
+        return False
+    
+    request_validacion = { 'requests' : [
+        { 'repeatCell' : {
+            'range' : rango_req,            
+            'cell' : {
+                'dataValidation': None
+                }, #end Cell            
+            'fields' : 'dataValidation'
+            }
+        } #end RepeatCell      
+        ] }  
+    
+    try:
+        sheets_service.spreadsheets().batchUpdate(spreadsheetId=spreadsheetId, body=request_validacion).execute()
+    except Exception as e:
+        print("Error formateando la hoja:", e)
+        return False
+    return True
+
+#%%
+def gshEscribirHoja(sheets_service, dataframe, spreadsheetId, nombreHoja, rango = None, replace = True, header=True):
+    """
+    Esta función escribe una dataframe en una hoja de google. Si la hoja que se ha pasado para escribir no existe, la crea. 
+    
+    sheets_service -- Objeto servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
+    dataframe      -- (pandas.DataFrame) Valores que se quieren llevar a la hoja.
+    spreadsheetId  -- (str) Identificador del libro en Google Drive.
+    nombreHoja     -- (str) Nombre de la hoja en la que se desea escribir dentro del libro.
+    rango          -- (str) opcional. Rango de celdas que escribir. Debe estar escrito en notación de hoja de cálculo. Ejemplos: A1, B2:C2, B4:F10
+                            Si se pasa un rango de 1 sola celda pero el dataframe tiene más de 1 valor y el parámetro replace está a true
+                            se limpia la hoja desde la celda indicada hasta el final.
+    replace        -- (boolean) opcional. Indica si se desea reemplazar el contenido completo de la hoja (y rango si se especifica).
+    header         -- (boolean) opcional. Indica si se desea incluir la cabecera cuando se escriba el dataframe.
+    """
+    import re
+    
+    sheet = sheets_service.spreadsheets()
+    #Comprobamos si la hoja existe. En caso contrario, se crea:
+    if nombreHoja not in gshObtenerNombreHojas(sheets_service, spreadsheetId):
+        gshCrearHoja(sheets_service, spreadsheetId=spreadsheetId, nombreHoja=nombreHoja)
+    #Por si viene rango, envolvemos el nombre de la hoja entre comillas
+    nombreHoja = "'" + nombreHoja + "'"
+    if not rango is None:
+        nombreHoja = nombreHoja + "!" + rango
+    
+    if replace:
+        #Si el rango es de una sola celda y el dataframe trae más de un valor se limpia la hoja entera desde esa celda hasta el final
+        if rango is not None and len(rango.split(':')) == 1 and (dataframe.shape[0]*dataframe.shape[1]) > 1 :
+            fila = re.split('(\d+)',rango)[1]
+            hoja_borrar = nombreHoja + ':'+ str(fila)
+            result = sheet.values().clear(spreadsheetId = spreadsheetId,
+                                          range = hoja_borrar).execute()
+            #del resultado capturamos cuál es la última columna y borramos por columnas
+            rango_borrado = result['clearedRange']
+            if len(rango_borrado.split(':'))>1:
+                columna = re.split( '(\d+)',  rango_borrado.split(':')[1]  )[0]
+                hoja_borrar = nombreHoja + ':'+ str(columna)
+                result = sheet.values().clear(spreadsheetId = spreadsheetId,
+                                              range = hoja_borrar).execute()
+            
+            
+        #Si el rango comprende más de una celda borramos sólo ese rango
+        else:
+            result = sheet.values().clear(spreadsheetId = spreadsheetId,
+                                          range = nombreHoja).execute()
+
+    copia = dataframe.copy()
+    #2021-12-14: Puede haber varias columnas con el mismo nombre. En ese caso, el dtype fallaría porque no devolvería una serie, sino un df. Corregimos usando iloc.
+    for col in range(len(copia.columns)):
+        if copia.iloc[:,col].dtype == 'datetime64[ns]':
+            copia.iloc[:,col] = copia.iloc[:,col].dt.strftime('%Y-%m-%d %H:%M:%S')
+    copia = copia.fillna('') #Cambio 2021-02-01. Hacer esto antes del cambio de formato implica que las columnas de tiempo, si tienen nulos, pasan a ser objects, por lo que no las convierte a texto, y la subida petaba.
+    #2021-02-01: Ahora también habría que reemplazar los NaT que hubiesen poder haber quedado kaputt:
+    copia = copia.replace('NaT','')
+    
+    lista = copia.values.tolist()
+    
+    if header:
+        lista.insert(0, dataframe.columns.tolist())
+        
+    result = sheets_service.spreadsheets().values().update(spreadsheetId = spreadsheetId,
+                                                    range = nombreHoja,
+                                                    body = {
+                                                        'majorDimension': 'ROWS',
+                                                        'values': lista
+                                                    },
+                                                    valueInputOption='RAW'
+                                                   ).execute()
+
+    return result
+
+#%%
+def gshEscribirRango(sheets_service, lista, spreadsheetId, nombreHoja, rango, fillna = None, header=False):
+    """
+    Esta función escribe una lista de valores en una hoja de google.
+
+    Parameters
+    ----------
+    sheets_service : service
+        Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
+    lista : [[]] o pandas dataframe
+        dataframe o lista de 2 dimensiones con los valores que se desean escribir. 
+        Si es lista, cada elemento de la lista representa una fila.
+    spreadsheetId : str
+        Identificador del libro en Google Drive.
+    nombreHoja : str
+        Nombre de la hoja en la que se desea escribir dentro del libro.
+    rango : str
+        Rango de celdas que escribir, o bien celda en la que escribir el primer valor. 
+        Debe estar escrito en notación de hoja de cálculo. Ejemplos: A1, B2:C2, B4:F10.
+    fillna : bool, optional
+        Especifica si debe cambiar los valores nulos por algo. 
+        Posibles valores: 
+            Si True cambia los nulos por cadena vacía. 
+            Si es un str, cambia los nulos por dicho valor. 
+            Si es False o None, no cambia los valores nulos. En este caso, si existe valor en una celda, no lo sobreescribirá. 
+        The default is None.
+    header : bool, optional
+        Para el caso de que se pase un dataframe en el campo 'Lista', indica si se
+        quieren escribir las cabeceras además de los valores. 
+            Si True escribe cabecera y valores empezando la cabecera en la primera celda de 'rango'.
+            Si False escribe solo los valores del dataframe empezando el primer valor en la primera celda de 'rango'
+
+    Returns
+    -------
+    result : TYPE
+        DESCRIPTION.
+
+    """
+    import pandas
+    
+    sheet = sheets_service.spreadsheets()
+    #Comprobamos si la hoja existe. En caso contrario, se crea:
+    if nombreHoja not in gshObtenerNombreHojas(sheets_service, spreadsheetId):
+        gshCrearHoja(sheets_service, spreadsheetId=spreadsheetId, nombreHoja=nombreHoja)
+    #Por si viene rango, envolvemos el nombre de la hoja entre comillas
+    nombreHoja = "'" + nombreHoja + "'!" + rango
+    
+    #Si como 'lista' me han pasado un dataframe lo convierto a lista. 
+    #Adicionalmente convierto los NaN a None para que el fillna de a continuación funcione
+    if type(lista) == pandas.core.frame.DataFrame:
+        cabecera = [[nom_columna for nom_columna in lista.columns]] 
+        lista    = [  [None if pd.isna(valor) else valor for valor in fila]   for fila in lista.values.tolist() ]
+        if header:
+            lista = cabecera + lista
+        
+    
+    if fillna is not None:
+        if type(fillna) == bool and fillna:
+            fillna = ''
+        if type(fillna) == str:
+            lista = [[fillna if v is None else v for v in l] for l in lista]
+        
+    result = sheets_service.spreadsheets().values().update(spreadsheetId = spreadsheetId,
+                                                    range = nombreHoja,
+                                                    body = {
+                                                        'majorDimension': 'ROWS',
+                                                        'values': lista
+                                                    },
+                                                    valueInputOption='RAW'
+                                                   ).execute()
+
+    return result
+
+#%%
+def gshFormatearHoja(sheets_service, spreadsheetId, nombreHoja, rangoCabecera = '1:1'):
+    """
+    Da formato corporativo básico a una hoja de una spreadsheet. Pone la cabecera con fondo azul, letras
+    blancas y en negrita. Inmoviliza la cabecera. Auto-ajusta el ancho de las columnas.
+    Devuelve True si se ejecuta bien, False si hay un error. 
+    
+    INPUT:
+    - sheets_service = Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
+    - spreadsheetId = str, Identificador del libro en Google Drive.
+    - nombreHoja = str, Nombre de la hoja en la que se desea escribir dentro del libro.
+    - rangoCabecera = str, Rango donde se encuentra la cabecera. Por defecto, fila 1 de la hoja completa '1:1'.
+    
+    OUTPUT:
+    - True si todo ha ido correctamente, False en caso de error.
+    """
+    #Localizamos la hoja pedida y capturamos su ID y el número de columnas
+    sheet_metadata = sheets_service.spreadsheets().get(spreadsheetId=spreadsheetId).execute()
+    sheets = sheet_metadata.get('sheets', '')
+    
+    sheetId = None
+    for sheet in sheets:
+        if sheet['properties']['title'] == nombreHoja :
+            sheetId = sheet['properties']['sheetId']
+            numCols = sheet['properties']['gridProperties']['columnCount']
+            break
+    
+    if sheetId is None:
+        print("La hoja con el nombre solicitado no existe")
+        return False
+    
+    rango_cabecera_req = gshTraducirRango(rangoLetras=rangoCabecera, sheetId=sheetId)
+    if rango_cabecera_req is None or 'startRowIndex' not in rango_cabecera_req.keys() or 'endRowIndex' not in rango_cabecera_req.keys():
+        print("No se ha proporcionado un rango correcto para la cabecera")
+        return False    
+    
+    cols_autoajustar_req = {"sheetId": sheetId, "dimension": 'COLUMNS'} 
+    if 'startColumnIndex' in rango_cabecera_req.keys():
+        cols_autoajustar_req["startIndex"] = rango_cabecera_req['startColumnIndex']
+    else :
+        cols_autoajustar_req["startIndex"] = 0
+    
+    if 'endColumnIndex' in rango_cabecera_req.keys():
+        cols_autoajustar_req["endIndex"] = rango_cabecera_req['endColumnIndex']
+    else :
+        cols_autoajustar_req["endIndex"] = numCols
+
+        
+    request_formato = { 'requests' : [
+        { 'repeatCell' : {
+            'range' : rango_cabecera_req,            
+            'cell' : {
+                'userEnteredFormat': {
+                    'backgroundColor' : {
+                        'red' : 7/255,
+                        'green' : 33/255,
+                        'blue' : 70/255
+                        },
+                    'textFormat' : {
+                        'bold' : True, 
+                        'foregroundColor' : {
+                            'red' : 1,
+                            'green' : 1,
+                            'blue' : 1
+                            }
+                        }
+                    } #end UserEnteredFormat
+                }, #end Cell            
+            'fields' : 'userEnteredFormat(backgroundColor,  textFormat)'
+            }
+        }, #end RepeatCell      
+        
+       { 'autoResizeDimensions': {
+           "dimensions": cols_autoajustar_req 
+           }
+        }, #end autoResizeDimensions
+       
+       { 'updateSheetProperties' :{
+            'properties' : {
+                "sheetId": sheetId,
+                "gridProperties": {
+                    "frozenRowCount": rango_cabecera_req['endRowIndex']
+                    }
+                },
+            'fields' : 'gridProperties(frozenRowCount)'
+            }
+        } #end updateSheetProperties        
+        ] }        
+    
+    try:
+        sheets_service.spreadsheets().batchUpdate(spreadsheetId=spreadsheetId, body=request_formato).execute()
+    except Exception as e:
+        print("Error formateando la hoja:", e)
+        return False
+    
+    return True
+
+#%%
+def gshFormatearRango(
+    sheets_service, 
+    spreadsheetId, 
+    nombreHoja, 
+    rango, 
+    idHoja = None,
+    formatoNumero = None, 
+    colorFondo = None,
+    colorTexto = None, 
+    negrita    = None,
+    cursiva    = None,
+    subrayado  = None,
+    tachado    = None,
+    tamLetra   = None,
+    tipoLetra  = None,
+    borde      = None
+):
+    """
+    Da el formato especificado a un rango de celdas de una google sheet. 
+    
+    Parameters
+    ----------
+    sheets_service : service object
+        Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
+    spreadsheetId : str
+        Identificador del libro en Google Drive.
+    nombreHoja : str
+        Nombre de la hoja en la que se desea escribir dentro del libro.
+    rango : str 
+        Rango a aplicar el formato con notación de la sheet. Ejemplo: 'C6:O12'
+    idHoja : str, default None
+        Id de la hoja dentro de la spreadsheet. Si se especifica este parámetro se ignora el 'nombreHoja'. 
+    formatoNumero : str, default None
+        Formato a aplicar. Puede ser una de las claves de FORMATOS_BASE o un 
+        formato de sheet. Ejemplos: 'num_sep_mil_2dec' o '#,##0.00_);[Red]-#,##0.00'
+    colorFondo : str, dict, default None
+        Color de fondo de las celdas. Puede ser un color RGB. Ejemplo: '#FFFFCC' (no case sensitive)
+        También puede ser un diccionario con las claves 'red', 'green', 'blue' y opcionalmente 'alpha'.
+        En caso de ser un diccionario, los valores deben ser numéricos. Pueden ser enteros entre 0 y 255 o 
+        decimales entre 0 y 1.
+    colorTexto : str, dict, default None
+        Color del texto de las celdas. Puede ser un color RGB. Ejemplo: '#ff0066' (no case sensitive)
+        También puede ser un diccionario con las claves 'red', 'green', 'blue' y opcionalmente 'alpha'.
+        En caso de ser un diccionario, los valores deben ser numéricos. Pueden ser enteros entre 0 y 255 o 
+        decimales entre 0 y 1.
+    negrita : bool, default None
+        Indica si el texto se debe poner en negrita o no
+    cursiva : bool, default None
+        Indica si el texto se debe poner en cursiva o no
+    subrayado : bool, default None
+        Indica si el texto se debe subrayar o no
+    tachado : bool, default None
+        Indica si el texto debe ir tachado o no
+    tamLetra : int, default None
+        Tamaño de letra en el rango afectado
+    tipoLetra : str, default None
+        Nombre del tipo de letra a utilizar. Es case sensitive. Ejemplo: 'Arial'
+    borde     : str|tuple|dict, default None. Si es str o tupla, aplicará un borde simple del color  definido en el texto (str hexadecimal, tupla rgb). Si es un siccionario, debe ir con las propiedades del borde. De enviarse, debe llevar las claves definidas en https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets/cells?hl=es-419#border
+    
+    Returns
+    -------
+    Boolean
+        True si todo ha ido correctamente, False en caso de error.
+    """   
+    
+    if idHoja is None:
+        idHoja = gshObtenerIDHoja(sheets_service, spreadsheetId, nombreHoja) 
+        
+    if idHoja is None:
+        print("No se puede formatear la hoja")
+        return False
+    
+    rango_req = gshTraducirRango(rangoLetras=rango, sheetId=idHoja)
+    if rango_req is None:
+        print("No se ha proporcionado un rango correcto para el formato")
+        return False    
+    
+    
+    userEnteredFormat={}
+    fields = set()
+    
+    #Formato del número
+    if formatoNumero is not None:
+        fields.add("numberFormat")
+        if formatoNumero in FORMATOS_BASE.keys():
+            userEnteredFormat["numberFormat"] = FORMATOS_BASE[formatoNumero]
+        else:
+            userEnteredFormat["numberFormat"] = formatoNumero
+    
+    #Color de fondo
+    if colorFondo is not None:
+        fields.add("backgroundColor")
+        userEnteredFormat["backgroundColor"] = gshTraducirColor(colorFondo)
+        
+            
+    #Formato del texto
+    textFormat = {}            
+    if colorTexto is not None:
+        fields.add("textFormat")
+        textFormat["foregroundColor"] = gshTraducirColor(colorTexto)
+            
+    if negrita is not None and type(negrita) == bool:
+        fields.add("textFormat")
+        textFormat['bold'] = negrita
+        
+    if cursiva is not None and type(cursiva) == bool:
+        fields.add("textFormat")
+        textFormat['italic'] = cursiva
+        
+    if subrayado is not None and type(subrayado) == bool:
+        fields.add("textFormat")
+        textFormat['underline'] = subrayado
+        
+    if tachado is not None and type(tachado) == bool:
+        fields.add("textFormat")
+        textFormat['strikethrough'] = tachado
+        
+    if tamLetra is not None and type(tamLetra) == int:
+        fields.add("textFormat")
+        textFormat['fontSize'] = tamLetra
+        
+    if tipoLetra is not None and type(tipoLetra) == str:
+        fields.add("textFormat")
+        textFormat['fontFamily'] = tipoLetra
+    
+    #Una vez que hemos preparado el formateo del texto, lo incluimos en la petición:
+    if len(textFormat)>0:
+        userEnteredFormat["textFormat"] = textFormat
+    
+    request_formato = {'requests':[]}
+    
+    if len(userEnteredFormat) > 0:
+        request_formato['requests'].append({ 
+            'repeatCell' : {
+                'range' : rango_req,            
+                'cell' : {
+                    'userEnteredFormat': userEnteredFormat
+                }, #end Cell            
+                'fields' : 'userEnteredFormat('+ ",".join(fields) +')'
+            }, #end RepeatCell,
+        })  
+    
+    if borde:
+        lados = ['top', 'bottom', 'left', 'right']
+        if type(borde) == str:
+            borde = {
+                'style' : 'SOLID',
+                'colorStyle' : {'rgbColor' : gshTraducirColor(borde)}
+            }
+            borde_request = {lado:borde for lado in lados}
+            
+        elif type(borde) == tuple:
+            borde = {
+                'style' : 'SOLID',
+                'colorStyle' : {'rgbColor' : {'red':borde[0], 'green':borde[1], 'blue':borde[2]}}
+            }
+            borde_request = {lado:borde for lado in lados}
+        else:
+            borde_request = borde
+        
+        borde_request['range'] = rango_req
+        request_formato['requests'].append({'updateBorders':borde_request})
+
+    try:
+        sheets_service.spreadsheets().batchUpdate(spreadsheetId=spreadsheetId, body=request_formato).execute()
+    except Exception as e:
+        print("Error formateando la hoja:", e)
+        return False
+    
+    return True
+
+#%%
+def gshFormatoCondicionalRango(sheets_service, spreadsheetId, nombreHoja, reglas_formatos, idHoja=None ):
+    """
+    Genera las reglas de formato condicional en un conjunto de rangos
+    
+    Parameters
+    ----------
+    sheets_service : service object
+        Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
+    spreadsheetId : str
+        Identificador del libro en Google Drive.
+    nombreHoja : str
+        Nombre de la hoja en la que se desea escribir dentro del libro.
+    reglas_formatos : list 
+        Lista de reglas con sus formatos. Cada regla es un diccionario con las entradas 'rango', 'tipo_regla', 'valores' y 'formato'. 
+        A su vez la entrada 'formato' es un diccionario que admite las claves 'colorFondo', 'colorTexto', 'negrita', 'cursiva' y 'tachado'.
+        Si hay más de una regla los rangos se pueden solapar. Las reglas se aplican en el orden en que aparecen
+        Ejemplo: 
+            [
+                 {
+                    'rango' : 'A3:B10', 
+                    'tipo_regla' : 'CUSTOM_FORMULA', 
+                    'valores' : ['=$AC3="Recup"']  ,
+                    'formato' : {
+                        'colorFondo' : '#b6d7a8' 
+                        }
+                } 
+                 ,
+                {
+                    'rango' : 'A3:C20', 
+                    'tipo_regla' : 'NUMBER_BETWEEN', 
+                    'valores' : ['1','7']  ,
+                    'formato' : {
+                        'colorFondo' : '#d5abf5',
+                        'negrita'    : True ,
+                        'cursiva'    : True , 
+                        'colorTexto' : '#ffffff'
+                        }
+                }     
+                  
+              ]
+    idHoja : str, optional
+        Id de la hoja dentro de la spreadsheet. Si se especifica este parámetro se ignora el 'nombreHoja'. The default is None.       
+    
+    Returns
+    -------
+    Boolean
+        True si todo ha ido correctamente, False en caso de error.
+    """   
+    
+    if type(reglas_formatos) != list:
+        print("las reglas-formato deben ser una lista de diccionarios")
+        print("""Ejemplo:
+              [
+                 {
+                    'rango' : 'A3:B10', 
+                    'tipo_regla' : 'CUSTOM_FORMULA', 
+                    'valores' : ['=$AC3="Recup"']  ,
+                    'formato' : {
+                        'colorFondo' : '#b6d7a8' 
+                        }
+                } 
+                 ,
+                {
+                    'rango' : 'A3:C20', 
+                    'tipo_regla' : 'NUMBER_BETWEEN', 
+                    'valores' : ['1','7']  ,
+                    'formato' : {
+                        'colorFondo' : '#d5abf5',
+                        'negrita'    : True ,
+                        'cursiva'    : True , 
+                        'colorTexto' : '#ffffff'
+                        }
+                }     
+                  
+              ]
+              
+              """)
+    
+    if idHoja is None:
+        idHoja = gshObtenerIDHoja(sheets_service, spreadsheetId, nombreHoja) 
+        
+    if idHoja is None:
+        print("No se puede dar el formato condicional.")
+        return False
+    
+    
+    
+    requests = []
+    for indice, regla_form in enumerate(reglas_formatos):
+        rango = gshTraducirRango(rangoLetras=regla_form['rango'], sheetId=idHoja)
+        
+        formato_peticion = {}
+        if 'colorFondo' in regla_form['formato'].keys():
+            colorFondo = regla_form['formato']['colorFondo']
+            formato_peticion['backgroundColor'] = gshTraducirColor(colorFondo)
+            
+        if any([opc in regla_form['formato'].keys() for opc in ['colorTexto', 'negrita', 'cursiva', 'tachado']] ):
+            formato_peticion['textFormat'] = {}
+        
+        if 'colorTexto' in regla_form['formato'].keys():
+            colorTexto = regla_form['formato']['colorTexto']
+            formato_peticion['textFormat']['foregroundColor'] = gshTraducirColor(colorTexto)
+            
+        if 'negrita' in regla_form['formato'].keys():
+            formato_peticion['textFormat']['bold'] = regla_form['formato']['negrita']
+            
+        if 'cursiva' in regla_form['formato'].keys():
+            formato_peticion['textFormat']['italic'] = regla_form['formato']['cursiva']
+            
+        if 'tachado' in regla_form['formato'].keys():
+            formato_peticion['textFormat']['strikethrough'] = regla_form['formato']['tachado']
+        
+        peticion = { "addConditionalFormatRule": {
+            "rule": {
+                "ranges": [ rango ],
+                
+                "booleanRule": {
+                    "condition": {
+                        "type": regla_form['tipo_regla'],
+                        "values": [ {"userEnteredValue":valor} for valor in regla_form['valores'] ]
+                        },
+                    "format": formato_peticion
+                    }
+                },
+            "index": indice
+            }
+            }
+        requests.append(peticion)
+    
+    
+    
+        
+    
+    request_formato = { 'requests' : requests}  
+    
+    try:
+        sheets_service.spreadsheets().batchUpdate(spreadsheetId=spreadsheetId, body=request_formato).execute()
+    except Exception as e:
+        print("Error formateando la hoja:", e)
+        return False
+    
+    return True
+
+#%%
+def gshInsertarFilasColumnas(sheets_service, spreadsheetId, nombreHoja, idHoja=None, insertarFilas=True, despuesDe=None, numInsertar=1, copiarFormatoAnterior = True):
+    """
+    Esta función inserta filas o columnas a una hoja de google sheets
+
+    Parameters
+    ----------
+    sheets_service : service
+        Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
+    spreadsheetId : str
+        Identificador del libro en Google Drive.
+    nombreHoja : str
+        Nombre de la hoja en la que se desea escribir dentro del libro. Si el parámetro idHoja viene
+        informado, este parámetro se ingnora.
+    idHoja : int, optional
+        Si se informa el id de la hoja a escribir se ignora el nombre de hoja. The default is None.
+    insertarFilas : bool, optional
+        - True: Inserta filas
+        - False: inserta columnas 
+        The default is True.
+    despuesDe : int, list, optional
+        Índice o lista de índices (lista de int) que marcan después de qué fila/columna se quieren insertar
+        las nuevas filas/columnas. Las inserciones se realizan de tal modo que los números de fila/columna 
+        se refieren siempre a las posiciones en la hoja original, antes de hacer ninguna inserción. No debe haber
+        posiciones repetidas. Ejemplo: [7, 1, 18] <-- Bien.           [5, 12, 5, 6] <-- Mal. 5 repetido. 
+        - 0: las filas/columnas se insertan al principio de la hoja. 
+        - número>0: Las filas/columnas se insertan a continuación de esa. 
+                    Ejemplo: despuesDe=1 => la fila 1 original se mantiene donde estaba y se crea una nueva fila
+                             en la posición 2 desplazando lo que había en la posición 2 y todo lo demás hacia abajo
+        - None: Las filas/columnas se insertan al final de la HOJA. Ojo: no después de la última fila/col rellena, sino
+                al final del todo de la hoja. Si se quiere insertar tras la última rellena habrá que leer la hoja, 
+                calcular sus dimensiones y pasar despuesDe con el valor de la última fila/columna rellenas.
+        The default is None.
+    numInsertar : int, list, optional
+        Debe tener la misma dimensión que 'despuesDe'. Para cada punto en el que se va a hacer una inserción,
+        indica el número de filas/columnas que se quieren insertar. 
+        The default is 1.
+    copiarFormatoAnterior : bool, list, optional
+        Si 'despuesDe' y 'numInsertar' son int se debe pasar un bool.
+        Si 'despuesDe' y 'numInsertar' son listas se puede pasar un bool (aplicará el mismo valor para todas las inserciones)
+        o una lista con la misma longitud y aplicará a cada inserción su valor.  
+        - True:  la nueva fila/columna hereda el formato de la anterior. No válido si insertamos en posición 0.
+        - False: la nueva fila/columna hereda el formato de la posterior
+        The default is True.
+
+    Returns
+    -------
+    res : resultado de la request
+        devuelve el resultado de la request, None en caso de error.
+    """
+    
+    #Revisión de parámetros de la función    
+    if idHoja is None:
+        idHoja = gshObtenerIDHoja(sheets_service, spreadsheetId, nombreHoja )
+    
+    if idHoja is None:
+        print("gshInsertarFilasColumnas: ERROR. No se encuentra la hoja especificada")
+        return None
+    
+    #Si han llamado a la función con despuesDe como entero lo convierto a lista
+    if type(despuesDe)==int:
+        if type(numInsertar)!= int:
+            print("gshInsertarFilasColumnas: ERROR. No coinciden los tipos de dato de 'despuesDe' y 'numInsertar'")
+            return None
+        
+        despuesDe = [despuesDe]
+        numInsertar = [numInsertar]
+    
+    #Si han llamado a la función con despuesDe como lista reviso dimensiones
+    elif type(despuesDe)==list and type(numInsertar)== list:
+        if len(despuesDe) != len(numInsertar):
+            print("gshInsertarFilasColumnas: ERROR. No coinciden las longitudes de 'despuesDe' y 'numInsertar'")
+            return None
+        
+    else:
+        print("gshInsertarFilasColumnas: ERROR. Los parámetros 'despuesDe' y/o 'numInsertar' no son válidos")
+        return None
+            
+    #Reviso si en copiarFormatoAnterior me han dado un bool o una lista
+    if type(copiarFormatoAnterior) == bool:
+        copiarFormatoAnterior = [copiarFormatoAnterior for elto in despuesDe]
+    
+    elif not ( type(copiarFormatoAnterior) == list and len(copiarFormatoAnterior) == len(despuesDe) ):
+        print("gshInsertarFilasColumnas: ERROR. El parámetros 'copiarFormatoAnterior' no es válido")
+        return None 
+    
+    
+    #Junto en un diccionario los datos para asegurarme de recorrerlo en orden inverso:
+    datos_inserciones = {dsp if dsp is not None else 1E20 : {'numInsertar' : numInsertar[i], 'copiarFormatoAnterior':copiarFormatoAnterior[i]} for i, dsp in enumerate(despuesDe)}
+    lista_cols = list(datos_inserciones.keys())
+    lista_cols.sort(reverse=True)
+    
+    
+    #Generar las peticiones
+    if insertarFilas:
+        dimension = 'ROWS'
+    else:
+        dimension = 'COLUMNS'
+        
+    
+    peticiones =  []
+    
+    for col in lista_cols:
+        
+        #Si despuesDe vale None (que hemos convertido a 1E20) --> añadimos al final de la hoja
+        if col == 1E20:
+            req = {'appendDimension': {
+                        'sheetId'    : idHoja,
+                        'dimension'  : dimension,
+                        'length'     : datos_inserciones[col]['numInsertar']
+                        }               
+                   }
+            
+        #Si tenemos un punto concreto donde insertar
+        else:
+            if col<0:
+                print("gshInsertarFilasColumnas: ERROR. Se ha pasado un número menor que 0 en 'despuesDe'")
+                return None 
+            
+            #Si quiero insertar en la posición 0 => no puedo copiar el formato de lo anterior. 
+            if col == 0:
+                datos_inserciones[col]['copiarFormatoAnterior'] = False 
+                
+            req = {'insertDimension': {
+                        'range' : {
+                            'sheetId'    : idHoja,
+                            'dimension'  : dimension,
+                            'startIndex' : col,
+                            'endIndex'   : col + datos_inserciones[col]['numInsertar']
+                            },
+                        'inheritFromBefore' : datos_inserciones[col]['copiarFormatoAnterior']
+                        }                   
+                   }
+        
+        peticiones.append(req)
+    
+    
+            
+    #Finalmente lanzamos la petición
+    try:
+        res = sheets_service.spreadsheets().batchUpdate(
+            spreadsheetId = spreadsheetId,
+            body ={'requests' : peticiones}
+            ).execute()
+    except Exception as e:
+        print ("gshInsertarFilasColumnas: ERROR. La petición de inserción falló")
+        print(e)
+        return None
+    
+    return res
+
+#%%
+def gshLeerHoja(sheets_service, spreadsheetId, nombreHoja, rango = None, header = True, formato_valores = 'UNFORMATTED_VALUE', formato_fechas = 'FORMATTED_STRING'):
+    """
+    Esta función lee el contenido de un rango de una hoja de un libro Google. Basada en el servicio: https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets.values/get
+
+    Parameters
+    ----------
+    sheets_service : object service
+        Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
+    spreadsheetId : str
+        Identificador del libro en Google Drive.
+    nombreHoja : str
+        Nombre de la hoja en la que se desea crear dentro del libro.
+    rango : str, optional
+        Rango de celdas que leer. Debe estar escrito en notación de hoja de cálculo. Ejemplos: 'A1', 'B2:C2', 'B4:F10'. 
+        The default is None.
+    header : (bool | list) opcional, default=True
+        Indica si el rango a leer tiene cabecera. Si es True, asume que será la primera fila del rango. 
+        Si es una lista con más de un elemento, devolverá un dataframe con multiíndice. 
+        Los índices van referenciados a la tabla, no a la fila de la gsheet.
+        Esto es, si se indica rango='C3:F10', y header=[0,1], la cabecera estará formada por las filas 3 y 4.
+    formato_valores : str, optional, default = 'UNFORMATTED_VALUE'
+        Indica 'FORMATTED_VALUE' si debe traer el valor tal cual se representa en la gsheet (con el formato de moneda, por ejemplo), o 'UNFORMATTED_VALUE'si debe recuperar el valor original.
+    formato_fechas: str, optional, default = 'FORMATTED_STRING'
+        Indica cómo debe representar las fechas en la salida. Posibles valores: 'SERIAL_NUMBER' o 'FORMATTED_STRING' (https://developers.google.com/sheets/api/reference/rest/v4/DateTimeRenderOption)
+
+    Returns
+    -------
+    df : pandas.DataFrame
+        DataFrame con los valores leídos.
+
+    """
+    import pandas as pd
+    # Call the Sheets API
+    sheet = sheets_service.spreadsheets()
+    nombreHoja = "'" + nombreHoja + "'"
+    if not rango is None:
+        nombreHoja = nombreHoja + "!" + rango
+       
+    result = sheet.values().get(
+        spreadsheetId        = spreadsheetId,
+        range                = nombreHoja,
+        valueRenderOption    = formato_valores,
+        dateTimeRenderOption = formato_fechas
+    ).execute()
+    values = result.get('values', [])
+
+    if not values:
+        print('No data found.')
+        return None
+    else:
+        if (type(header) == bool and header):
+            header = [0]
+        if type(header) == list:
+            if len(header) > 1:
+                cabecera = [values[i] for i in header]
+                cols = pd.MultiIndex.from_tuples([tuple(sub[i] for sub in cabecera) for i in range(len(cabecera[0]))])
+            else:
+                cols = values[header[0]]
+            data = values[max(header)+1:]
+            len_data = max([len(fila) for fila in data] + [0])
+            while len(cols)<len_data:
+                cols.append('')
+                
+            while len(data)>0 and len(data[0])<len(cols):
+                data[0].append(None)
+                
+            df = pd.DataFrame.from_records(data=data, columns = cols)
+        else:
+            df = pd.DataFrame.from_records(data=values)
+        
+        
+        return df
+
+#%%
+def gshLimpiarHoja(sheets_service, spreadsheetId, nombreHoja):
+    """
+    Esta función limpia todo el contenido de una hoja, pero no la elimina. 
+
+    Parameters
+    ----------
+    sheets_service : service
+        Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
+    spreadsheetId : str
+        Identificador del libro en Google Drive..
+    nombreHoja : str
+        Nombre de la hoja que se desea borrar.
+
+    Returns
+    -------
+    result : TYPE
+        Resultado de la ejecución del borrado.
+        None si no existe la hoja a borrar
+
+    """    
+    sheet = sheets_service.spreadsheets()
+    #Comprobamos si la hoja existe. En caso contrario, se crea:
+    if nombreHoja not in gshObtenerNombreHojas(sheets_service, spreadsheetId):
+        print('La hoja que se desea borrar no existe dentro del libro')
+        return None
+    
+    
+    result = sheet.values().clear(spreadsheetId = spreadsheetId, range = nombreHoja).execute()
+
+    return result
+
+#%%
+def gshLimpiarRango(sheets_service, spreadsheetId, nombreHoja, rango=None):
+    """
+    Esta función limpia el contenido de un rango dentro de una hoja
+
+    Parameters
+    ----------
+    sheets_service : service
+        Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
+    spreadsheetId : str
+        Identificador del libro en Google Drive..
+    nombreHoja : str
+        Nombre de la hoja que se desea borrar.
+    rango : str, optional
+        Rango en formato hoja de cálculo a borrar. Ejemplo: 'A3:B45' o 'C:C'
+        Si vale None se borra la hoja entera.
+        The default is None
+
+    Returns
+    -------
+    result : TYPE
+        Resultado de la ejecución del borrado.
+        None si no existe la hoja a borrar
+
+    """    
+    if rango is None:
+        return gshLimpiarHoja(sheets_service, spreadsheetId, nombreHoja)
+    
+    sheet = sheets_service.spreadsheets()
+    #Comprobamos si la hoja existe. En caso contrario, se crea:
+    if nombreHoja not in gshObtenerNombreHojas(sheets_service, spreadsheetId):
+        print('La hoja que se desea borrar no existe dentro del libro')
+        return None
+    
+    
+    result = sheet.values().clear(spreadsheetId = spreadsheetId, range = "'"+nombreHoja+"'!"+rango).execute()
+
+    return result
+
+#%%
+def gshListarOpcionesFiltro():
+    opciones_condicion = ['CONDITION_TYPE_UNSPECIFIED', 
+                          'NUMBER_GREATER', 'NUMBER_GREATER_THAN_EQ', 'NUMBER_LESS', 'NUMBER_LESS_THAN_EQ', 'NUMBER_EQ', 'NUMBER_NOT_EQ', 'NUMBER_BETWEEN', 'NUMBER_NOT_BETWEEN',
+                          'TEXT_CONTAINS', 'TEXT_NOT_CONTAINS', 'TEXT_STARTS_WITH', 'TEXT_ENDS_WITH', 'TEXT_EQ', 'TEXT_IS_EMAIL', 'TEXT_IS_URL', 
+                          'DATE_EQ', 'DATE_BEFORE', 'DATE_AFTER', 'DATE_ON_OR_BEFORE', 'DATE_ON_OR_AFTER', 'DATE_BETWEEN', 'DATE_NOT_BETWEEN', 'DATE_IS_VALID', 
+                          #'ONE_OF_RANGE', 'ONE_OF_LIST', #Not supported in filters
+                          'BLANK', 'NOT_BLANK', 
+                          #'CUSTOM_FORMULA', 'BOOLEAN'  #Not supported in filters
+                          ]
+    return opciones_condicion
+       
+#%%
+def gshObtenerIDHoja(sheets_service, spreadsheetId, nombreHoja):
+    """
+    Devuelve el ID de una hoja concreta dentro de una spreadsheet.
+    
+    Parameters
+    ----------
+    sheets_service : service object
+        Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
+    spreadsheetId : str
+        Identificador del libro en Google Drive.
+    nombreHoja : str
+        Nombre de la hoja buscada.      
+    
+    Returns
+    -------
+    str
+        Id de la hoja dentro de la spreadsheet. None si no se localiza
+    """   
+    
+    #Localizamos la hoja pedida y capturamos su ID y el número de columnas
+    sheet_metadata = sheets_service.spreadsheets().get(spreadsheetId=spreadsheetId).execute()
+    sheets = sheet_metadata.get('sheets', '')
+    
+    sheetId = None
+    for sheet in sheets:
+        if sheet['properties']['title'] == nombreHoja :
+            sheetId = sheet['properties']['sheetId']
+            break
+    
+    if sheetId is None:
+        print("La hoja con el nombre solicitado no existe")
+        
+    return sheetId
+
+#%%
+def gshObtenerNombreIdHojas(sheets_service, spreadsheetId):
+    """
+    Esta función devuelve un diccionario con claves los nombres de hojas que tiene un libro de Google y valor sus IDs.
+
+    Parameters
+    ----------
+    sheets_service : service object
+        Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente..
+    spreadsheetId : str
+        Identificador del libro en Google Drive.
+
+    Returns
+    -------
+    sheetNamesIDs : dict
+        Diccionario con los nombres de hojas como claves y los IDs como valores
+    """
+    
+    # Call the Sheets API
+    sheet_metadata = sheets_service.spreadsheets().get(spreadsheetId=spreadsheetId).execute()
+    sheets = sheet_metadata.get('sheets', '')
+    sheetNamesIDs = dict()
+    for sheet in sheets:
+        sheetNamesIDs[ sheet['properties']['title'] ] = sheet['properties']['sheetId']
+    return sheetNamesIDs
+
+#%%
+def gshObtenerNombreHojas(sheets_service, spreadsheetId):
+    """
+    Esta función devuelve los nombres de hojas que tiene un libro de Google.
+
+    INPUT:
+    - sheets_service = Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
+    - spreadsheetId  = str, Identificador del libro en Google Drive.
+    
+    returns list con los nombres de las hojas.
+    """
+    # Call the Sheets API
+    sheet_metadata = sheets_service.spreadsheets().get(spreadsheetId=spreadsheetId).execute()
+    sheets = sheet_metadata.get('sheets', '')
+    sheetnames = []
+    for sheet in sheets:
+        sheetnames.append(sheet['properties']['title'])
+    return sheetnames
 
 #%%
 def gshObtenerRangosProtegidos(sheets_service, spreadsheetId):
@@ -1861,6 +2503,113 @@ def gshObtenerRangosProtegidos(sheets_service, spreadsheetId):
                 
     return rangos_protegidos           
                 
+#%%    
+def gshObtenerVistasFiltro(sheets_service, spreadsheetId, nombreHoja):
+    """
+    Esta función devuelve un diccionario con las vistas de filtro que hay en una hoja de un libro google.
+    La clave del diccionario es el NOMBRE de la vista de filtro. El contenido es el id de la vista de filtro.
+    En caso de error, la función devuelve None.
+    Si la hoja no tiene ninguna vista de filtro, se devuelve un diccionario vacío. 
+    
+    INPUT:
+    - sheets_service = Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
+    - spreadsheetId = str, Identificador del libro en Google Drive.
+    - nombreHoja = str, Nombre de la hoja en la que se desea escribir dentro del libro.
+    """
+    
+    #Localizamos las propiedades de todas las hojas
+    sheet_metadata = sheets_service.spreadsheets().get(spreadsheetId=spreadsheetId).execute()
+    sheets = sheet_metadata.get('sheets', '')
+    sheet_names = [sheet['properties']['title'] for sheet in sheets]
+    
+    #Comprobamos si la hoja existe. En caso contrario, se devuelve None:
+    if nombreHoja not in sheet_names:
+        return None
+    
+    #Comprobamos en qué posición está la hoja solicitada. No va a fallar porque en el if anterior aseguramos que está.
+    indice_hoja = sheet_names.index(nombreHoja)
+    
+        
+    #Si esa hoja en particular no tiene vistas de filtro, devolvemos diccionario vacío.
+    if 'filterViews' not in sheet_metadata['sheets'][indice_hoja].keys():
+        return dict()
+    
+    vistas_filtro = sheet_metadata['sheets'][indice_hoja]['filterViews']
+    
+    #Pasamos las vistas a un diccionario con clave el nombre de la vista y dato el id.
+    result = dict()
+    for filtro in vistas_filtro:
+        result[filtro['title']] = filtro['filterViewId']
+
+    return result
+
+#%%    
+def gshOrdenarHojas(sheets_service, spreadsheetId, nombresHojasOrdenadas):
+    """
+    Ordena las hojas dentro de una spreadsheet. Recibe una lista con los nombres de las 
+    hojas en el orden deseado. El resto de hojas de la spreadsheet que no aparezcan en 
+    la lista quedarán al final en el mismo orden en el que estén al entrar en la función.
+
+    Parameters
+    ----------
+    sheets_service : service object
+        Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
+    spreadsheetId : str
+        Identificador del libro en Google Drive.
+    nombresHojasOrdenadas : list
+        Lista con los nombres de hoja en el orden que se desean.
+
+    Returns
+    -------
+    res : json
+        resultado de la ejecución.
+    """
+    if type(nombresHojasOrdenadas) != list:
+        print ('Se espera una lista con los nombres de hoja en el orden que se quieren')
+        return None
+        
+    #Localizamos las propiedades de todas las hojas
+    sheet_metadata = sheets_service.spreadsheets().get(spreadsheetId=spreadsheetId).execute()
+    sheets = sheet_metadata.get('sheets', '')
+    sheet_names = [sheet['properties']['title'] for sheet in sheets]
+    
+    #Para cada hoja de la lista actualizamos su índice y lo metemos en la lista de requests
+    indice=0
+    requests = []
+    for nombreHoja in nombresHojasOrdenadas :
+        if nombreHoja not in sheet_names:
+            continue
+        
+        properties = sheets[sheet_names.index(nombreHoja)]['properties']
+        properties['index'] = indice
+        req = {'updateSheetProperties': {
+                    'properties' : properties,
+                    'fields'     : '*'
+                    }               
+               }
+        requests.append(req)
+        indice += 1
+        
+    #Para aquellas hojas del libro que no se hayan pasado en la lista ordenada las dejamos al final en el orden que vienen
+    for nombreHoja in sheet_names:
+        if nombreHoja not in nombresHojasOrdenadas:
+            properties = sheets[sheet_names.index(nombreHoja)]['properties']
+            properties['index'] = indice
+            req = {'updateSheetProperties': {
+                        'properties' : properties,
+                        'fields'     : '*'
+                        }               
+                    }
+            requests.append(req)
+            indice += 1
+            
+    #Finalmente lanzamos la petición
+    res = sheets_service.spreadsheets().batchUpdate(
+        spreadsheetId = spreadsheetId,
+        body ={'requests' : requests}
+        ).execute()
+    
+    return res
 
 #%%
 def gshProtegerRango(sheets_service, spreadsheetId, nombreHoja, usuariosEdicion, rango=None, idRango=None, nombreRango=None, gruposEdicion = None):
@@ -2014,47 +2763,6 @@ def gshProtegerRango(sheets_service, spreadsheetId, nombreHoja, usuariosEdicion,
             
             
     return salida
-    
-
-#%% 
-
-def gshEliminarRangoProtegido(sheets_service, spreadsheetId, idRango):
-    """
-    Elimina uno varios rangos protegidos de un libro.
-
-    Parameters
-    ----------
-    sheets_service : service object
-        Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
-    spreadsheetId : str
-        Identificador del libro en Google Drive.
-    idRango : str o list
-        ID o lista de IDs de los rangos protegidos que se quieren eliminar
-
-    Returns
-    -------
-    bool
-        True si todo ha ido bien, False en caso de error
-
-    """
-    lista_requests = []
-    
-    if type(idRango) == str:
-        idRango = [idRango]
-        
-    for idRg in idRango:
-        req = { "deleteProtectedRange" : {"protectedRangeId": idRg }  }
-        lista_requests.append(req)
-        
-    try: 
-        body = {'requests': lista_requests}
-        respuesta = sheets_service.spreadsheets().batchUpdate(spreadsheetId=spreadsheetId, body=body).execute()
-        #print(respuesta)
-    except Exception as e:
-        print("Error eliminando rangos protegidos:", e)
-        return False
-    
-    return True
     
 #%%
 def gshRenombrarLibro(sheets_service, spreadsheetId, nuevo_nombre):
@@ -2234,12 +2942,7 @@ def gshTraducirRango(rangoLetras, sheetId):
       
     return rango
     
-    
-
-
-
 #%%
-
 def gshTraducirRangoInverso (rangoJSON):
     """
     Recibe una representación JSON de un rango y devuelve el rango con el formato de una sheet (Ejemplo: 'A25:J48')
@@ -2287,682 +2990,6 @@ def gshTraducirRangoInverso (rangoJSON):
         return rango_letras_ini
     
     return  rango_letras_ini + ':' + rango_letras_fin
-
-
-    
-
-#%%
-
-
-def gshFormatearHoja(sheets_service, spreadsheetId, nombreHoja, rangoCabecera = '1:1'):
-    """
-    Da formato corporativo básico a una hoja de una spreadsheet. Pone la cabecera con fondo azul, letras
-    blancas y en negrita. Inmoviliza la cabecera. Auto-ajusta el ancho de las columnas.
-    Devuelve True si se ejecuta bien, False si hay un error. 
-    
-    INPUT:
-    - sheets_service = Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
-    - spreadsheetId = str, Identificador del libro en Google Drive.
-    - nombreHoja = str, Nombre de la hoja en la que se desea escribir dentro del libro.
-    - rangoCabecera = str, Rango donde se encuentra la cabecera. Por defecto, fila 1 de la hoja completa '1:1'.
-    
-    OUTPUT:
-    - True si todo ha ido correctamente, False en caso de error.
-    """
-    #Localizamos la hoja pedida y capturamos su ID y el número de columnas
-    sheet_metadata = sheets_service.spreadsheets().get(spreadsheetId=spreadsheetId).execute()
-    sheets = sheet_metadata.get('sheets', '')
-    
-    sheetId = None
-    for sheet in sheets:
-        if sheet['properties']['title'] == nombreHoja :
-            sheetId = sheet['properties']['sheetId']
-            numCols = sheet['properties']['gridProperties']['columnCount']
-            break
-    
-    if sheetId is None:
-        print("La hoja con el nombre solicitado no existe")
-        return False
-    
-    rango_cabecera_req = gshTraducirRango(rangoLetras=rangoCabecera, sheetId=sheetId)
-    if rango_cabecera_req is None or 'startRowIndex' not in rango_cabecera_req.keys() or 'endRowIndex' not in rango_cabecera_req.keys():
-        print("No se ha proporcionado un rango correcto para la cabecera")
-        return False    
-    
-    cols_autoajustar_req = {"sheetId": sheetId, "dimension": 'COLUMNS'} 
-    if 'startColumnIndex' in rango_cabecera_req.keys():
-        cols_autoajustar_req["startIndex"] = rango_cabecera_req['startColumnIndex']
-    else :
-        cols_autoajustar_req["startIndex"] = 0
-    
-    if 'endColumnIndex' in rango_cabecera_req.keys():
-        cols_autoajustar_req["endIndex"] = rango_cabecera_req['endColumnIndex']
-    else :
-        cols_autoajustar_req["endIndex"] = numCols
-
-        
-    request_formato = { 'requests' : [
-        { 'repeatCell' : {
-            'range' : rango_cabecera_req,            
-            'cell' : {
-                'userEnteredFormat': {
-                    'backgroundColor' : {
-                        'red' : 7/255,
-                        'green' : 33/255,
-                        'blue' : 70/255
-                        },
-                    'textFormat' : {
-                        'bold' : True, 
-                        'foregroundColor' : {
-                            'red' : 1,
-                            'green' : 1,
-                            'blue' : 1
-                            }
-                        }
-                    } #end UserEnteredFormat
-                }, #end Cell            
-            'fields' : 'userEnteredFormat(backgroundColor,  textFormat)'
-            }
-        }, #end RepeatCell      
-        
-       { 'autoResizeDimensions': {
-           "dimensions": cols_autoajustar_req 
-           }
-        }, #end autoResizeDimensions
-       
-       { 'updateSheetProperties' :{
-            'properties' : {
-                "sheetId": sheetId,
-                "gridProperties": {
-                    "frozenRowCount": rango_cabecera_req['endRowIndex']
-                    }
-                },
-            'fields' : 'gridProperties(frozenRowCount)'
-            }
-        } #end updateSheetProperties        
-        ] }        
-    
-    try:
-        sheets_service.spreadsheets().batchUpdate(spreadsheetId=spreadsheetId, body=request_formato).execute()
-    except Exception as e:
-        print("Error formateando la hoja:", e)
-        return False
-    
-    return True
-
-
-
-
-
-
-#%%
-
-def gshEliminarFormatoRango (sheets_service, spreadsheetId, nombreHoja, rango, idHoja = None):
-    """
-    Elimina el formato de un rango de celdas concreto, dejando el formato por defecto.
-
-    Parameters
-    ----------
-    sheets_service : service object
-        Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
-    spreadsheetId : str
-        Identificador del libro en Google Drive.
-    nombreHoja : str
-        Nombre de la hoja en la que se desea escribir dentro del libro.
-    rango : str 
-        Rango a aplicar el formato con notación de la sheet. Ejemplo: 'C6:O12'
-    idHoja : str, optional
-        Id de la hoja dentro de la spreadsheet. Si se especifica este parámetro se ignora el 'nombreHoja'. The default is None.
-
-    Returns
-    -------
-    bool
-        True si ha funcionado correctamente, False en caso contrario.
-
-    """
-    if idHoja is None:
-        idHoja = gshObtenerIDHoja(sheets_service, spreadsheetId, nombreHoja) 
-        
-    if idHoja is None:
-        print("No se puede formatear la hoja")
-        return False
-    
-    rango_req = gshTraducirRango(rangoLetras=rango, sheetId=idHoja)
-    if rango_req is None:
-        print("No se ha proporcionado un rango correcto para el formato")
-        return False 
-    
-    request_formato = { 'requests' : [
-        { 'repeatCell' : {
-            'range' : rango_req,            
-            'cell' : {
-                'userEnteredFormat': None
-                }, #end Cell            
-            'fields' : 'userEnteredFormat'
-            }
-        } #end RepeatCell      
-        ] }  
-    
-    try:
-        sheets_service.spreadsheets().batchUpdate(spreadsheetId=spreadsheetId, body=request_formato).execute()
-    except Exception as e:
-        print("Error formateando la hoja:", e)
-        return False
-    
-    return True
-
-
-
-
-
-#%%
-#https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets/cells?hl=en#borders
-def gshBordearRango(sheets_service, spreadsheetId, nombreHoja, rango, idHoja = None,
-                    arriba = None,
-                    abajo = None,
-                    izquierda = None,
-                    derecha = None
-
-):
-    """
-    Establece un formato para los bordes del rango especificado.
-
-    Parameters
-    ----------
-    sheets_service : service object
-        Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
-    spreadsheetId : str
-        Identificador del libro en Google Drive.
-    nombreHoja : str
-        Nombre de la hoja en la que se desea escribir dentro del libro.
-    rango : str 
-        Rango a aplicar el formato con notación de la sheet. Ejemplo: 'C6:O12'
-    idHoja : str, optional
-        Id de la hoja dentro de la spreadsheet. Si se especifica este parámetro se ignora el 'nombreHoja'. The default is None.
-    arriba: dict, optional
-    abajo: dict, optional
-    izquierda: dict, optional
-    derecha: dict, optional
-
-    Para cualquiera de los bordes (arriba, abajo, izquierda, derecha) es necesario  un diccionario
-    especificando el estilo y color del borde
-        {"style":  str, optional default NONE "DOTTED", "DASHED", "SOLID", "SOLID_MEDIUM", "SOLID_THICK", "NONE", "DOUBLE"
-         "color": dict, optional  default NONE {
-             "red": decimal. Valores numérico entre 0 y 1
-             "green": decimal. Valores numérico entre 0 y 1
-             "blue": decimal. Valores numérico entre 0 y 1
-             "alpha": decimal. Valores numérico entre 0 y 1
-         }
-        }
-
-    Ejemplo:
-
-    {
-    "style": "DASHED",
-    "color": {
-                "red": 1.0
-            }
-    }
-
-
-    Returns
-    -------
-    bool
-        True si ha funcionado correctamente, False en caso contrario.
-    """
-
-    if idHoja is None:
-        idHoja = gshObtenerIDHoja(sheets_service, spreadsheetId, nombreHoja) 
-        
-    if idHoja is None:
-        print("No se puede formatear la hoja")
-        return False
-    
-    rango_req = gshTraducirRango(rangoLetras=rango, sheetId=idHoja)
-    if rango_req is None:
-        print("No se ha proporcionado un rango correcto para el formato")
-        return False    
-
-    request_formato = {
-         'requests' : [
-             {
-                  'updateBorders':
-                    {
-                        'range':  rango_req,
-                        "top":    arriba,
-                        "left":   izquierda,
-                        'right':  derecha,
-                        'bottom': abajo
-                    }    
-            }] 
-        }  
-    
-    try:
-        sheets_service.spreadsheets().batchUpdate(spreadsheetId=spreadsheetId, body=request_formato).execute()
-    except Exception as e:
-        print("Error formateando la hoja:", e)
-        return False
-    
-    return True
-
-#%%
-def gshFormatearRango(sheets_service, spreadsheetId, nombreHoja, rango, idHoja = None,
-                      formatoNumero = None, 
-                      colorFondo = None,
-                      colorTexto = None, 
-                      negrita    = None,
-                      cursiva    = None,
-                      subrayado  = None,
-                      tachado    = None,
-                      tamLetra   = None,
-                      tipoLetra  = None,
-                      borde      = None
-                      ):
-    """
-    Da el formato especificado a un rango de celdas de una google sheet. 
-    
-    Parameters
-    ----------
-    sheets_service : service object
-        Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
-    spreadsheetId : str
-        Identificador del libro en Google Drive.
-    nombreHoja : str
-        Nombre de la hoja en la que se desea escribir dentro del libro.
-    rango : str 
-        Rango a aplicar el formato con notación de la sheet. Ejemplo: 'C6:O12'
-    idHoja : str, default None
-        Id de la hoja dentro de la spreadsheet. Si se especifica este parámetro se ignora el 'nombreHoja'. 
-    formatoNumero : str, default None
-        Formato a aplicar. Puede ser una de las claves de FORMATOS_BASE o un 
-        formato de sheet. Ejemplos: 'num_sep_mil_2dec' o '#,##0.00_);[Red]-#,##0.00'
-    colorFondo : str, dict, default None
-        Color de fondo de las celdas. Puede ser un color RGB. Ejemplo: '#FFFFCC' (no case sensitive)
-        También puede ser un diccionario con las claves 'red', 'green', 'blue' y opcionalmente 'alpha'.
-        En caso de ser un diccionario, los valores deben ser numéricos. Pueden ser enteros entre 0 y 255 o 
-        decimales entre 0 y 1.
-    colorTexto : str, dict, default None
-        Color del texto de las celdas. Puede ser un color RGB. Ejemplo: '#ff0066' (no case sensitive)
-        También puede ser un diccionario con las claves 'red', 'green', 'blue' y opcionalmente 'alpha'.
-        En caso de ser un diccionario, los valores deben ser numéricos. Pueden ser enteros entre 0 y 255 o 
-        decimales entre 0 y 1.
-    negrita : bool, default None
-        Indica si el texto se debe poner en negrita o no
-    cursiva : bool, default None
-        Indica si el texto se debe poner en cursiva o no
-    subrayado : bool, default None
-        Indica si el texto se debe subrayar o no
-    tachado : bool, default None
-        Indica si el texto debe ir tachado o no
-    tamLetra : int, default None
-        Tamaño de letra en el rango afectado
-    tipoLetra : str, default None
-        Nombre del tipo de letra a utilizar. Es case sensitive. Ejemplo: 'Arial'        
-    
-    Returns
-    -------
-    Boolean
-        True si todo ha ido correctamente, False en caso de error.
-    """   
-    
-    if idHoja is None:
-        idHoja = gshObtenerIDHoja(sheets_service, spreadsheetId, nombreHoja) 
-        
-    if idHoja is None:
-        print("No se puede formatear la hoja")
-        return False
-    
-    rango_req = gshTraducirRango(rangoLetras=rango, sheetId=idHoja)
-    if rango_req is None:
-        print("No se ha proporcionado un rango correcto para el formato")
-        return False    
-    
-    
-    userEnteredFormat={}
-    fields = set()
-    
-    #Formato del número
-    if formatoNumero is not None:
-        fields.add("numberFormat")
-        if formatoNumero in FORMATOS_BASE.keys():
-            userEnteredFormat["numberFormat"] = FORMATOS_BASE[formatoNumero]
-        else:
-            userEnteredFormat["numberFormat"] = formatoNumero
-    
-    #Color de fondo
-    if colorFondo is not None:
-        fields.add("backgroundColor")
-        userEnteredFormat["backgroundColor"] = gshTraducirColor(colorFondo)
-        
-            
-    #Formato del texto
-    textFormat = {}            
-    if colorTexto is not None:
-        fields.add("textFormat")
-        textFormat["foregroundColor"] = gshTraducirColor(colorTexto)
-            
-    if negrita is not None and type(negrita) == bool:
-        fields.add("textFormat")
-        textFormat['bold'] = negrita
-        
-    if cursiva is not None and type(cursiva) == bool:
-        fields.add("textFormat")
-        textFormat['italic'] = cursiva
-        
-    if subrayado is not None and type(subrayado) == bool:
-        fields.add("textFormat")
-        textFormat['underline'] = subrayado
-        
-    if tachado is not None and type(tachado) == bool:
-        fields.add("textFormat")
-        textFormat['strikethrough'] = tachado
-        
-    if tamLetra is not None and type(tamLetra) == int:
-        fields.add("textFormat")
-        textFormat['fontSize'] = tamLetra
-        
-    if tipoLetra is not None and type(tipoLetra) == str:
-        fields.add("textFormat")
-        textFormat['fontFamily'] = tipoLetra
-    
-    #Una vez que hemos preparado el formateo del texto, lo incluimos en la petición:
-    if len(textFormat)>0:
-        userEnteredFormat["textFormat"] = textFormat
-        
-    
-    request_formato = { 'requests' : [
-        { 'repeatCell' : {
-            'range' : rango_req,            
-            'cell' : {
-                'userEnteredFormat': userEnteredFormat
-                }, #end Cell            
-            'fields' : 'userEnteredFormat('+ ",".join(fields) +')'
-            }
-        }, #end RepeatCell,
-        { 'updateBorders': {
-            'range': rango_req,
-             "bottom": {
-                "style": "DASHED",
-                "width": 1,
-                "color": {
-                "blue": 1.0
-                    }
-                }
-            }
-
-        } #end updateborders     
-        ] }  
-    
-    print(request_formato)
-    try:
-        sheets_service.spreadsheets().batchUpdate(spreadsheetId=spreadsheetId, body=request_formato).execute()
-    except Exception as e:
-        print("Error formateando la hoja:", e)
-        return False
-    
-    return True
-
-
-#%%
-def gshEliminarFormatosCondicionalesHoja(sheets_service, spreadsheetId, nombreHoja):
-    """
-    Elimina todas las reglas de formato condicional de una hoja
-
-    Parameters
-    ----------
-    sheets_service : service object
-        Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
-    spreadsheetId : str
-        Identificador del libro en Google Drive.
-    nombreHoja : str
-        Nombre de la hoja en la que se desean borrar todos los formatos condicionales.
-
-    Returns
-    -------
-    bool
-        True si ha ido todo bien, False en caso de error.
-
-    """
-    #Localizamos las propiedades de todas las hojas
-    sheet_metadata = sheets_service.spreadsheets().get(spreadsheetId=spreadsheetId).execute()
-    sheets = sheet_metadata.get('sheets', '')
-    sheet_names = [sheet['properties']['title'] for sheet in sheets]
-    
-    #Comprobamos si la hoja existe. En caso contrario, se devuelve None:
-    if nombreHoja not in sheet_names:
-        return False
-    
-    #Comprobamos en qué posición está la hoja solicitada. No va a fallar porque en el if anterior aseguramos que está.
-    indice_hoja = sheet_names.index(nombreHoja)
-    id_hoja = sheet_metadata['sheets'][indice_hoja]['properties']['sheetId']
-    
-        
-    #Si esa hoja en particular no tiene formatos condicionales no hay que hacer nada.
-    if 'conditionalFormats' not in sheet_metadata['sheets'][indice_hoja].keys():
-        return True
-    
-    reglas_condic = sheet_metadata['sheets'][indice_hoja]['conditionalFormats']
-    
-    requests= []
-    for indice, regla in enumerate(reglas_condic):
-        req = {
-            "deleteConditionalFormatRule": {
-                "index": indice,
-                "sheetId": id_hoja
-                }
-             }
-        requests.append(req)
-        
-    requests.reverse()
-    request_final = { 'requests' : requests}  
-    #print(request_final)
-    
-    try:
-        sheets_service.spreadsheets().batchUpdate(spreadsheetId=spreadsheetId, body=request_final).execute()
-    except Exception as e:
-        print("Error borrando formatos condicionales de la hoja:", e)
-        return False
-    
-    return True
-    
-#%%
-def gshFormatoCondicionalRango(sheets_service, spreadsheetId, nombreHoja, reglas_formatos, idHoja=None ):
-    """
-    Genera las reglas de formato condicional en un conjunto de rangos
-    
-    Parameters
-    ----------
-    sheets_service : service object
-        Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
-    spreadsheetId : str
-        Identificador del libro en Google Drive.
-    nombreHoja : str
-        Nombre de la hoja en la que se desea escribir dentro del libro.
-    reglas_formatos : list 
-        Lista de reglas con sus formatos. Cada regla es un diccionario con las entradas 'rango', 'tipo_regla', 'valores' y 'formato'. 
-        A su vez la entrada 'formato' es un diccionario que admite las claves 'colorFondo', 'colorTexto', 'negrita', 'cursiva' y 'tachado'.
-        Si hay más de una regla los rangos se pueden solapar. Las reglas se aplican en el orden en que aparecen
-        Ejemplo: 
-            [
-                 {
-                    'rango' : 'A3:B10', 
-                    'tipo_regla' : 'CUSTOM_FORMULA', 
-                    'valores' : ['=$AC3="Recup"']  ,
-                    'formato' : {
-                        'colorFondo' : '#b6d7a8' 
-                        }
-                } 
-                 ,
-                {
-                    'rango' : 'A3:C20', 
-                    'tipo_regla' : 'NUMBER_BETWEEN', 
-                    'valores' : ['1','7']  ,
-                    'formato' : {
-                        'colorFondo' : '#d5abf5',
-                        'negrita'    : True ,
-                        'cursiva'    : True , 
-                        'colorTexto' : '#ffffff'
-                        }
-                }     
-                  
-              ]
-    idHoja : str, optional
-        Id de la hoja dentro de la spreadsheet. Si se especifica este parámetro se ignora el 'nombreHoja'. The default is None.       
-    
-    Returns
-    -------
-    Boolean
-        True si todo ha ido correctamente, False en caso de error.
-    """   
-    
-    if type(reglas_formatos) != list:
-        print("las reglas-formato deben ser una lista de diccionarios")
-        print("""Ejemplo:
-              [
-                 {
-                    'rango' : 'A3:B10', 
-                    'tipo_regla' : 'CUSTOM_FORMULA', 
-                    'valores' : ['=$AC3="Recup"']  ,
-                    'formato' : {
-                        'colorFondo' : '#b6d7a8' 
-                        }
-                } 
-                 ,
-                {
-                    'rango' : 'A3:C20', 
-                    'tipo_regla' : 'NUMBER_BETWEEN', 
-                    'valores' : ['1','7']  ,
-                    'formato' : {
-                        'colorFondo' : '#d5abf5',
-                        'negrita'    : True ,
-                        'cursiva'    : True , 
-                        'colorTexto' : '#ffffff'
-                        }
-                }     
-                  
-              ]
-              
-              """)
-    
-    if idHoja is None:
-        idHoja = gshObtenerIDHoja(sheets_service, spreadsheetId, nombreHoja) 
-        
-    if idHoja is None:
-        print("No se puede dar el formato condicional.")
-        return False
-    
-    
-    
-    requests = []
-    for indice, regla_form in enumerate(reglas_formatos):
-        rango = gshTraducirRango(rangoLetras=regla_form['rango'], sheetId=idHoja)
-        
-        formato_peticion = {}
-        if 'colorFondo' in regla_form['formato'].keys():
-            colorFondo = regla_form['formato']['colorFondo']
-            formato_peticion['backgroundColor'] = gshTraducirColor(colorFondo)
-            
-        if any([opc in regla_form['formato'].keys() for opc in ['colorTexto', 'negrita', 'cursiva', 'tachado']] ):
-            formato_peticion['textFormat'] = {}
-        
-        if 'colorTexto' in regla_form['formato'].keys():
-            colorTexto = regla_form['formato']['colorTexto']
-            formato_peticion['textFormat']['foregroundColor'] = gshTraducirColor(colorTexto)
-            
-        if 'negrita' in regla_form['formato'].keys():
-            formato_peticion['textFormat']['bold'] = regla_form['formato']['negrita']
-            
-        if 'cursiva' in regla_form['formato'].keys():
-            formato_peticion['textFormat']['italic'] = regla_form['formato']['cursiva']
-            
-        if 'tachado' in regla_form['formato'].keys():
-            formato_peticion['textFormat']['strikethrough'] = regla_form['formato']['tachado']
-        
-        peticion = { "addConditionalFormatRule": {
-            "rule": {
-                "ranges": [ rango ],
-                
-                "booleanRule": {
-                    "condition": {
-                        "type": regla_form['tipo_regla'],
-                        "values": [ {"userEnteredValue":valor} for valor in regla_form['valores'] ]
-                        },
-                    "format": formato_peticion
-                    }
-                },
-            "index": indice
-            }
-            }
-        requests.append(peticion)
-    
-    
-    
-        
-    
-    request_formato = { 'requests' : requests}  
-    #print(request_formato)
-    
-    try:
-        sheets_service.spreadsheets().batchUpdate(spreadsheetId=spreadsheetId, body=request_formato).execute()
-    except Exception as e:
-        print("Error formateando la hoja:", e)
-        return False
-    
-    return True
-
-#%%
-def gshEliminarValidacionRango(sheets_service, spreadsheetId, nombreHoja, rango, idHoja = None):
-    """
-    Elimina todas las fórmulas de validación del rango proporcionado.
-
-    Parameters
-    ----------
-    sheets_service : service object
-        Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
-    spreadsheetId : str
-        Identificador del libro en Google Drive.
-    nombreHoja : str
-        Nombre de la hoja en la que se desea escribir dentro del libro.
-    rango : str 
-        Rango donde eliminar las validaciones con notación de la sheet. Ejemplo: 'C6:O12'
-    idHoja : str, optional
-        Id de la hoja dentro de la spreadsheet. Si se especifica este parámetro se ignora el 'nombreHoja'. The default is None.
-
-    Returns
-    -------
-    bool
-        True si todo ha ido correctamente, False en otro caso.
-
-    """
-    if idHoja is None:
-        idHoja = gshObtenerIDHoja(sheets_service, spreadsheetId, nombreHoja) 
-        
-    if idHoja is None:
-        print("No se puede eliminar la validacion")
-        return False
-    
-    rango_req = gshTraducirRango(rangoLetras=rango, sheetId=idHoja)
-    if rango_req is None:
-        print("No se ha proporcionado un rango correcto para el formato")
-        return False
-    
-    request_validacion = { 'requests' : [
-        { 'repeatCell' : {
-            'range' : rango_req,            
-            'cell' : {
-                'dataValidation': None
-                }, #end Cell            
-            'fields' : 'dataValidation'
-            }
-        } #end RepeatCell      
-        ] }  
-    
-    try:
-        sheets_service.spreadsheets().batchUpdate(spreadsheetId=spreadsheetId, body=request_validacion).execute()
-    except Exception as e:
-        print("Error formateando la hoja:", e)
-        return False
-    return True
 
 #%%
 def gshValidacionDesplegableRango(sheets_service, spreadsheetId, nombreHoja, rango, valoresValidacion, idHoja = None):
@@ -3820,6 +3847,62 @@ def ggmSendMessage(service, message, user_id='me'):
         return message
     except Exception as error:
         print ('An error occurred:', error)
+
+#%%
+def ggmObtenerCorreosHilo(service, threadId, userId='me', orderAsc=True):
+    """
+    Función que proporciona los mensajes que corresponden a un determinado identificador
+    de hilo correspondiente a un usuario de correo
+
+    Parámetros:
+        service  -- Objeto servicio de Gmail. Se obtiene con el método connect.
+        threadId -- Identificado del hilo cuyos mensajes se necesita obtener
+        userId   -- Dirección de mail del usuario registrado en el servicio.
+                    El valor especial "me" indica el usuario autenticado
+        orderAsc -- Orden de los correos por fecha.
+                    "True" indica orden ascendente.
+
+    Devuelve:
+        Los mensajes relacionados con el dirección de e-mail e hilo de correo dados
+    """
+
+    try:
+        from datetime import datetime
+        tdata = service.users().threads().get(userId=userId, id=threadId).execute()
+        nmsgs = len(tdata['messages'])
+
+        listaIdCorreos = []
+        index = 0
+        while index < nmsgs:
+            idMsg = tdata['messages'][index]['id']
+            mensaje = ggmLeerCorreo(service, idMsg)
+            idMensaje = [idMsg]
+            partesMensaje = [mensaje['payload']]
+            fechaMsg = ''
+            for header in mensaje['payload']['headers']:
+                if header['name'] == 'Date':
+                    fechaMsg = header['value']
+                    break
+
+            fechaTime = [datetime.strptime(fechaMsg, '%a, %d %b %Y %H:%M:%S %z')]
+            listaIdCorreos.append((idMensaje, partesMensaje, fechaMsg, fechaTime))
+            index += 1
+
+        # el indice e[0,1,2,..] indica el campo a ordenar
+        listaIdCorreosOrdenados = sorted(listaIdCorreos, key=lambda e : e[3], reverse=not orderAsc)
+
+        listaIdCorreosOrdenadosFinal = []
+        index = 0
+        while index < nmsgs:
+            listaIdCorreosOrdenadosFinal.append((listaIdCorreosOrdenados[index][0],
+                                                 listaIdCorreosOrdenados[index][1],
+                                                 listaIdCorreosOrdenados[index][2]))
+            index += 1
+
+        return listaIdCorreosOrdenadosFinal
+
+    except Exception as error:
+        print('An error occurred:', error)
 
 #%%
 ######################################################################################################
