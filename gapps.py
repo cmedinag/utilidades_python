@@ -3237,6 +3237,9 @@ def _ggmExtraerDetallesMail(mensaje):
     Returns:
         (dict) Objeto diccionario más simplificado con las claves id, asunto, from, cc, y fecha.
     '''
+    import re
+    patron_email = r'[\w\.-]+@[\w\.-]+'
+
     detalles = {}
     if 'threadId' in mensaje:
         detalles['threadId'] = mensaje['threadId']
@@ -3253,10 +3256,10 @@ def _ggmExtraerDetallesMail(mensaje):
             detalles['from'] = header['value']
     
         if header['name'].lower() == 'to':
-            detalles['to'] = header['value']
+            detalles['to'] = ', '.join(set(re.findall(patron_email, header['value'])))
     
         if header['name'].lower() == 'cc':
-            detalles['cc'] = header['value']
+            detalles['cc'] = ', '.join(set(re.findall(patron_email, header['value'])))
     
         if header['name'].lower() == 'date':
             detalles['fecha'] = header['value']
@@ -3626,8 +3629,6 @@ def ggmAddAttachmentsToMessage(emailMessage, ficheros):
     body = {'raw': b64_string}
     return body
 
-
-
 #%%
 def ggmDescargarAdjuntos(gmail_service, mensaje=None, idmensaje=None, carpeta_descarga=None):
     """
@@ -3830,6 +3831,51 @@ def ggmListarCorreos(
     return listamensajes
 
 #%%
+def ggmObtenerCorreosHilo(gmail_service, threadId, userId='me', orderAsc=True):
+    """
+    Función que proporciona los mensajes que corresponden a un determinado identificador
+    de hilo correspondiente a un usuario de correo
+
+    Parámetros:
+        gmail_service  -- Objeto servicio de Gmail. Se obtiene con el método connect.
+        threadId       -- str. Identificado del hilo cuyos mensajes se necesita obtener
+        userId         -- str. Dirección de mail del usuario registrado en el servicio. El valor especial "me" indica el usuario autenticado
+        orderAsc       -- bool. Orden de los correos por fecha. "True" indica orden ascendente.
+
+    Devuelve:
+        Los mensajes relacionados con el dirección de e-mail e hilo de correo dados
+    """
+
+    try:
+        from datetime import datetime
+        #Obtenemos los mensajes del hilo
+        tdata = gmail_service.users().threads().get(userId=userId, id=threadId).execute()
+        nmsgs = len(tdata['messages'])
+
+        listaIdCorreos = []
+        for mensaje in tdata['messages']:
+            #Obtenemos el id del mensaje, para poder leer los detalles del mismo
+            id = mensaje['id']
+            objeto_mensaje = ggmLeerCorreo(gmail_service, id)
+            #Obtenemos la fecha del correo
+            fecha = ''
+            for header in objeto_mensaje['payload']['headers']:
+                if header['name'] == 'Date':
+                    fecha = header['value']
+                    break
+
+            fechaTime = [datetime.strptime(fecha, '%a, %d %b %Y %H:%M:%S %z')]
+            listaIdCorreos.append({'id': id, 'correo':objeto_mensaje, 'fecha':fechaTime})
+
+        #Ordenamos por fecha
+        listaIdCorreosOrdenados = sorted(listaIdCorreos, key=lambda e : e['fecha'], reverse=not orderAsc)
+
+        return listaIdCorreosOrdenados
+
+    except Exception as error:
+        print(f'Error al obtener los correos del hilo {threadId}:', error)
+
+#%%
 def ggmSendMessage(service, message, user_id='me'):
     """Send an email message.
         Args:
@@ -3847,62 +3893,6 @@ def ggmSendMessage(service, message, user_id='me'):
         return message
     except Exception as error:
         print ('An error occurred:', error)
-
-#%%
-def ggmObtenerCorreosHilo(service, threadId, userId='me', orderAsc=True):
-    """
-    Función que proporciona los mensajes que corresponden a un determinado identificador
-    de hilo correspondiente a un usuario de correo
-
-    Parámetros:
-        service  -- Objeto servicio de Gmail. Se obtiene con el método connect.
-        threadId -- Identificado del hilo cuyos mensajes se necesita obtener
-        userId   -- Dirección de mail del usuario registrado en el servicio.
-                    El valor especial "me" indica el usuario autenticado
-        orderAsc -- Orden de los correos por fecha.
-                    "True" indica orden ascendente.
-
-    Devuelve:
-        Los mensajes relacionados con el dirección de e-mail e hilo de correo dados
-    """
-
-    try:
-        from datetime import datetime
-        tdata = service.users().threads().get(userId=userId, id=threadId).execute()
-        nmsgs = len(tdata['messages'])
-
-        listaIdCorreos = []
-        index = 0
-        while index < nmsgs:
-            idMsg = tdata['messages'][index]['id']
-            mensaje = ggmLeerCorreo(service, idMsg)
-            idMensaje = [idMsg]
-            partesMensaje = [mensaje['payload']]
-            fechaMsg = ''
-            for header in mensaje['payload']['headers']:
-                if header['name'] == 'Date':
-                    fechaMsg = header['value']
-                    break
-
-            fechaTime = [datetime.strptime(fechaMsg, '%a, %d %b %Y %H:%M:%S %z')]
-            listaIdCorreos.append((idMensaje, partesMensaje, fechaMsg, fechaTime))
-            index += 1
-
-        # el indice e[0,1,2,..] indica el campo a ordenar
-        listaIdCorreosOrdenados = sorted(listaIdCorreos, key=lambda e : e[3], reverse=not orderAsc)
-
-        listaIdCorreosOrdenadosFinal = []
-        index = 0
-        while index < nmsgs:
-            listaIdCorreosOrdenadosFinal.append((listaIdCorreosOrdenados[index][0],
-                                                 listaIdCorreosOrdenados[index][1],
-                                                 listaIdCorreosOrdenados[index][2]))
-            index += 1
-
-        return listaIdCorreosOrdenadosFinal
-
-    except Exception as error:
-        print('An error occurred:', error)
 
 #%%
 ######################################################################################################
