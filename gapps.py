@@ -111,25 +111,6 @@ Funciones:
 - Google Contacts: todas estas funciones necesitan el servicio contacts
     - gctBuscarPersonas    : Realiza una búsqueda de personas en el directorio
     
-Versiones:
-----------
-2022-07-06: v.1.4.1 Resueltos dos bugs en función connect
-2022-07-06: v.1.4 Función de reemplezo en Google Slides
-2022-06-30: Se añaden funciones para crear carpeta, renombrar fichero y subir carpeta.
-2022-04-22: v1.13 Se añeden funciones de formateo de celdas y bordes y búsqueda recursiva en Google Drive
-2022-03-04: v1.12 Se añaden funciones para recuperar versiones de un fichero y para extraer el id a partir de su url
-2021-10-29: v1.11 Se añaden campos cc a los métodos de envío de mail, y los métodos ggmCreateDraft y ggmCreateMessageWithAttachments
-2021-08-31: v1.10 Nuevas funciones de trabajo con google sheets y funciones auxiliares
-2021-03-30: v1.9. Se añade función gshDescargarHoja.
-2021-03-25: v1.8. Se añade funcionalidad para quitar el proxy.
-2021-02-12: v1.7. Se añaden funciones para trabajo con vistas de filtro y posibilidad de enviar mails en HTML
-2021-02-01: v1.6. Fix en el método gshEscribirHoja (daba problema con columnas datetime con valores nulos).
-2020-12-09: v1.5. Se añaden las funciones ggmDescargarAdjuntos, ggmLeerCorreo y ggmListarCorreos.
-2020-11-27: v1.4. Se incluye control de caracteres latinos en ggmCreateMessage y se añaden valores predeterminados a los parámetros.
-2020-11-25: v1.3. Incluye método ggmGetPrimaryAddress y corrigen bugs
-2020-11-17: v1.2. Incluye método gdrCambiarPermisos, se da nueva funcionalidad a gdrGetFileProperties y se corrigen bugs
-2020-11-13: v1.1. Incluye método getUserPwd y gdrSubirVersion
-2020-10-27: v1.0. Incluye métodos para conectar a los servicios de google
 """
 from __future__ import print_function
 #Para conseguir las credenciales, acceder a esta URL:
@@ -373,11 +354,21 @@ def connect(ruta_credenciales = './', archivo_credenciales = 'credentials.json',
     ruta_token           -- (str) Indica en qué carpeta se encuentra el archivo token pickle. Si se informe None, asume la misma que la de credenciales
     archivo_token        -- (str) Nombre del archivo que contiene o contendrá las credenciales de google ya aceptadas. Si se proporciona no solicita pantalla de permiso y lo genera. ('token.pickle' por defecto).
     services             -- lista de (str). Indica los servicios para los que se solicita canal. Ejemplos: ['sheets'], ['sheets', 'drive', 'docs']
-    port                 -- (int) Indica el puerto en el que se quiere hacer la conexion. Por defecto 8080
+    port                 -- (int) Indica el puerto en el que se quiere hacer la conexion. Por defecto 0
     
     Salida:
     (diccionario) Diccionario cuya clave será el tipo de servicio y como valor el objeto servicio adecuado. Ej.: {'sheets': (objeto servicio de google)}.
-    Posibles claves: 'sheets', 'drive', 'docs', 'gmail', 'groups', 'calendar', 'contacts'
+    Posibles claves: 'sheets', 'drive', 'docs', 'gmail', 'groups', 'calendar', 'contacts', 'scripts'
+    
+    Ejemplo de llamada:
+        import gapps
+        servicios = gapps.connect(
+            ruta_credenciales    = RUTA,
+            archivo_credenciales = 'credentials.json',
+            ruta_token           = RUTA_TOKEN,
+            archivo_token        = 'token.pickle',
+            services             = ['sheets', 'drive', 'docs', 'gmail', 'groups', 'calendar', 'contacts', 'scripts']
+        )
     """
     
     import os
@@ -420,6 +411,10 @@ def connect(ruta_credenciales = './', archivo_credenciales = 'credentials.json',
             #SCOPES.append('https://www.googleapis.com/auth/cloud-platform')
             SCOPES.append('https://www.googleapis.com/auth/contacts.readonly')
             SCOPES.append('https://www.googleapis.com/auth/directory.readonly')
+        elif service == 'scripts':
+            SCOPES.append('https://www.googleapis.com/auth/script.projects')
+            SCOPES.append('https://www.googleapis.com/auth/script.external_request')
+            SCOPES.append('https://www.googleapis.com/auth/documents')
 
     creds = None
     # The file token.pickle stores the user's access and refresh tokens, and is
@@ -463,6 +458,8 @@ def connect(ruta_credenciales = './', archivo_credenciales = 'credentials.json',
                 service_dict[service] = build('calendar', 'v3', credentials=creds)
             elif service == 'contacts':
                 service_dict[service] = build('people', 'v1', credentials=creds)
+            elif service == 'scripts':
+                service_dict[service] = build('script', 'v1', credentials=creds)
         except Exception as err:
             service_dict[service] = 'Error: ' + str(err)
     return service_dict
@@ -5139,3 +5136,43 @@ def gctBuscarPersonas(contacts_service, busqueda:str):
         if not page_token:
             break
     return pd.DataFrame.from_dict(resultado)
+#%%
+######################################################################################################
+# GOOGLE APPS SCRIPTS
+######################################################################################################
+#%%
+def gasLlamarFuncion(gas_service, implementationId: str, nombre_funcion:str, lista_argumentos:list = []):
+    '''
+    Función que invoca a una función alojada en Google Apps Scripts. 
+    Requerimientos:
+    ---------------
+    1. Es necesario que al haber obtenido los servicios de google, se hayan obtenido al menos los mismos de los que haga uso el script. 
+       Por ejemplo, si la función de apps script hace uso de Drive y de Sheets, cuando llamemos a gapps.connect debemos pedir al menos los servicios scripts, drive y sheets.
+    2. La función de Google Apps Script debe estar bajo una implementación generada en Google Apps Script.
+    3. El proyecto de Google en el que se halle el código a invocar debe ser el MISMO que se utilice para generar el token personal. 
+       En la pantalla de Google Apps Script se puede configurar el número de proyecto al que se asocia el código.
+       El número de proyecto se obtiene desde la página https://console.cloud.google.com/home/dashboard y seleccionando el proyecto deseado.
+    
+    Parametros
+    ----------
+    gas_service : googleapiclient.discovery.Resource
+        Servicio de google con permisos para invocar Apps Scripts. Se obtiene con el método connect.
+    implementationId : str
+        Identificador de la implementación en la que está alojado el script. Desde la pantalla de edición del script en Google Apps Script, se debe generar con
+        el botón "Nueva Implementación". Al hacerlo, se genera un código de imlpementación, que es el que hay que proporcionar aquí. 
+        Si se modifica la función en Google, hay que realizar una nueva implementación, y el este código cambiará. Las implementaciones son como versiones 
+        de código.
+    nombre_funcion : str
+        Nombre de la función que se desea invocar.
+    lista_argumentos : list, optional
+        Lista de argumentos que se deben proporcionar a la función, en el orden en el que estén establecidos. The default is [].
+
+    Devuelve
+    -------
+    dict con el resultado de la llamada.
+
+    '''
+    request = {"function": nombre_funcion,"parameters":lista_argumentos}
+    respuesta = gas_service.scripts().run(scriptId=implementationId, body=request).execute()
+    
+    return respuesta
