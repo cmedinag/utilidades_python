@@ -1501,7 +1501,7 @@ def gshEliminarValidacionRango(sheets_service, spreadsheetId, nombreHoja, rango,
     return True
 
 #%%
-def gshEscribirHoja(sheets_service, dataframe, spreadsheetId, nombreHoja, rango = None, replace = True, header=True, formato_fecha='%Y-%m-%d %H:%M:%S', modo='RAW'):
+def gshEscribirHoja(sheets_service, dataframe, spreadsheetId, nombreHoja, rango = None, replace = True, header=True, formato_fecha='#', modo='RAW'):
     """
     Esta función escribe una dataframe en una hoja de google. Si la hoja que se ha pasado para escribir no existe, la crea. 
     
@@ -1514,7 +1514,7 @@ def gshEscribirHoja(sheets_service, dataframe, spreadsheetId, nombreHoja, rango 
                             se limpia la hoja desde la celda indicada hasta el final.
     replace        -- (boolean) opcional. Indica si se desea reemplazar el contenido completo de la hoja (y rango si se especifica).
     header         -- (boolean) opcional. Indica si se desea incluir la cabecera cuando se escriba el dataframe.
-    formato_fecha  -- (str) opcional. Indica el formato de escritura de fechas. Por defecto, '%Y-%m-%d %H:%M:%S'
+    formato_fecha  -- (str) opcional. Indica el formato de escritura de fechas. en formato máscara python. Por defecto, '#' para indicar el número de días desde 30/12/1899
     modo           -- (str) opcional. Indica el modo de escritura. Valores admitidos: 'RAW' o 'USER_ENTERED' (https://developers.google.com/sheets/api/reference/rest/v4/ValueInputOption?hl=es-419)
                       El modo RAW hace que prevalezca el tipo de dato presente en el dataframe. Ten en cuenta que las fechas se convierten a texto para poder escribirlas.
                       El modo USER_ENTERED es como si un humano escribiese los valores. En ese caso las fechas se verán como fecha en gsheets, pero todo lo que parezca un número se verá como tal.
@@ -1528,6 +1528,7 @@ def gshEscribirHoja(sheets_service, dataframe, spreadsheetId, nombreHoja, rango 
                           Un número como 123.45 se grabará en gsheets como 123,45 (número)
 """
     import re
+    from datetime import datetime
     
     sheet = sheets_service.spreadsheets()
     #Comprobamos si la hoja existe. En caso contrario, se crea:
@@ -1561,9 +1562,13 @@ def gshEscribirHoja(sheets_service, dataframe, spreadsheetId, nombreHoja, rango 
 
     copia = dataframe.copy()
     #2021-12-14: Puede haber varias columnas con el mismo nombre. En ese caso, el dtype fallaría porque no devolvería una serie, sino un df. Corregimos usando iloc.
+    origen = datetime(1899, 12, 30)
     for col in range(len(copia.columns)):
         if copia.iloc[:,col].dtype == 'datetime64[ns]':
-            copia.iloc[:,col] = copia.iloc[:,col].dt.strftime(formato_fecha)
+            if formato_fecha == '#':
+                copia.iloc[:,col] = copia.iloc[:,col].apply(lambda x: (x-origen).total_seconds()/86400)
+            else:
+                copia.iloc[:,col] = copia.iloc[:,col].dt.strftime(formato_fecha)
     copia = copia.fillna('') #Cambio 2021-02-01. Hacer esto antes del cambio de formato implica que las columnas de tiempo, si tienen nulos, pasan a ser objects, por lo que no las convierte a texto, y la subida petaba.
     #2021-02-01: Ahora también habría que reemplazar los NaT que hubiesen poder haber quedado kaputt:
     copia = copia.replace('NaT','')
@@ -1585,7 +1590,7 @@ def gshEscribirHoja(sheets_service, dataframe, spreadsheetId, nombreHoja, rango 
     return result
 
 #%%
-def gshEscribirRango(sheets_service, lista, spreadsheetId, nombreHoja, rango, fillna = None, header=False, formato_fecha='%Y-%m-%d %H:%M:%S', modo='RAW'):
+def gshEscribirRango(sheets_service, lista, spreadsheetId, nombreHoja, rango, fillna = None, header=False, formato_fecha='#', modo='RAW'):
     """
     Esta función escribe una lista de valores en una hoja de google.
 
@@ -1615,7 +1620,7 @@ def gshEscribirRango(sheets_service, lista, spreadsheetId, nombreHoja, rango, fi
         quieren escribir las cabeceras además de los valores. 
             Si True escribe cabecera y valores empezando la cabecera en la primera celda de 'rango'.
             Si False escribe solo los valores del dataframe empezando el primer valor en la primera celda de 'rango'
-    formato_fecha  -- (str) opcional. Indica el formato de escritura de fechas. Por defecto, '%Y-%m-%d %H:%M:%S'
+    formato_fecha  -- (str) opcional. Indica el formato de escritura de fechas. en formato máscara python. Por defecto, '#' para indicar el número de días desde 30/12/1899
     modo           -- (str) opcional. Indica el modo de escritura. Valores admitidos: 'RAW' o 'USER_ENTERED' (https://developers.google.com/sheets/api/reference/rest/v4/ValueInputOption?hl=es-419)
                       El modo RAW hace que prevalezca el tipo de dato presente en el dataframe. Ten en cuenta que las fechas se convierten a texto para poder escribirlas.
                       El modo USER_ENTERED es como si un humano escribiese los valores. En ese caso las fechas se verán como fecha en gsheets, pero todo lo que parezca un número se verá como tal.
@@ -1660,10 +1665,14 @@ def gshEscribirRango(sheets_service, lista, spreadsheetId, nombreHoja, rango, fi
             lista = [[fillna if v is None else v for v in l] for l in lista]
     
     #Convertimos todo lo que sea fecha a texto:
+    origen = datetime(1899, 12, 30)
     for f, fila in enumerate(lista):
         for c, valor in enumerate(fila):
             if isinstance(valor, datetime):
-                lista[f][c] = valor.strftime(formato_fecha)
+                if formato_fecha == '#':
+                    lista[f][c] = (valor-origen).total_seconds()/86400
+                else:
+                    lista[f][c] = valor.strftime(formato_fecha)
         
     result = sheets_service.spreadsheets().values().update(spreadsheetId = spreadsheetId,
                                                     range = nombreHoja,
