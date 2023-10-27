@@ -1516,7 +1516,17 @@ def gshEscribirHoja(sheets_service, dataframe, spreadsheetId, nombreHoja, rango 
     header         -- (boolean) opcional. Indica si se desea incluir la cabecera cuando se escriba el dataframe.
     formato_fecha  -- (str) opcional. Indica el formato de escritura de fechas. Por defecto, '%Y-%m-%d %H:%M:%S'
     modo           -- (str) opcional. Indica el modo de escritura. Valores admitidos: 'RAW' o 'USER_ENTERED' (https://developers.google.com/sheets/api/reference/rest/v4/ValueInputOption?hl=es-419)
-    """
+                      El modo RAW hace que prevalezca el tipo de dato presente en el dataframe. Ten en cuenta que las fechas se convierten a texto para poder escribirlas.
+                      El modo USER_ENTERED es como si un humano escribiese los valores. En ese caso las fechas se verán como fecha en gsheets, pero todo lo que parezca un número se verá como tal.
+                      Ejemplos con 'RAW' si se porporciona formato_fecha = '%d/%m/%Y' 
+                          Una fecha datetime(1999, 12, 31) se grabará en gsheets como '31/12/1999 (texto)
+                          Un texto '0001' se grabará en gsheets como '0001 (texto)
+                          Un número como 123.45 se grabará en gsheets como 123,45 (número)
+                      Ejemplos con 'USER_ENTERED' si se porporciona formato_fecha = '%d/%m/%Y' :
+                          Una fecha datetime(1999, 12, 31) se grabará en gsheets como 31/12/1999 (fecha)
+                          Un texto '0001' se grabará en gsheets como 1 (número)
+                          Un número como 123.45 se grabará en gsheets como 123,45 (número)
+"""
     import re
     
     sheet = sheets_service.spreadsheets()
@@ -1607,6 +1617,16 @@ def gshEscribirRango(sheets_service, lista, spreadsheetId, nombreHoja, rango, fi
             Si False escribe solo los valores del dataframe empezando el primer valor en la primera celda de 'rango'
     formato_fecha  -- (str) opcional. Indica el formato de escritura de fechas. Por defecto, '%Y-%m-%d %H:%M:%S'
     modo           -- (str) opcional. Indica el modo de escritura. Valores admitidos: 'RAW' o 'USER_ENTERED' (https://developers.google.com/sheets/api/reference/rest/v4/ValueInputOption?hl=es-419)
+                      El modo RAW hace que prevalezca el tipo de dato presente en el dataframe. Ten en cuenta que las fechas se convierten a texto para poder escribirlas.
+                      El modo USER_ENTERED es como si un humano escribiese los valores. En ese caso las fechas se verán como fecha en gsheets, pero todo lo que parezca un número se verá como tal.
+                      Ejemplos con 'RAW' si se porporciona formato_fecha = '%d/%m/%Y' 
+                          Una fecha datetime(1999, 12, 31) se grabará en gsheets como '31/12/1999 (texto)
+                          Un texto '0001' se grabará en gsheets como '0001 (texto)
+                          Un número como 123.45 se grabará en gsheets como 123,45 (número)
+                      Ejemplos con 'USER_ENTERED' si se porporciona formato_fecha = '%d/%m/%Y' :
+                          Una fecha datetime(1999, 12, 31) se grabará en gsheets como 31/12/1999 (fecha)
+                          Un texto '0001' se grabará en gsheets como 1 (número)
+                          Un número como 123.45 se grabará en gsheets como 123,45 (número)
 
     Returns
     -------
