@@ -1563,12 +1563,12 @@ def gshEscribirHoja(sheets_service, dataframe, spreadsheetId, nombreHoja, rango 
     copia = dataframe.copy()
     #2021-12-14: Puede haber varias columnas con el mismo nombre. En ese caso, el dtype fallaría porque no devolvería una serie, sino un df. Corregimos usando iloc.
     origen = datetime(1899, 12, 30)
-    for col in range(len(copia.columns)):
-        if copia.iloc[:,col].dtype == 'datetime64[ns]':
+    for col in copia.columns:
+        if copia[col].dtype == 'datetime64[ns]':
             if formato_fecha == '#':
-                copia.iloc[:,col] = copia.iloc[:,col].apply(lambda x: (x-origen).total_seconds()/86400)
+                copia[col] = copia[col].apply(lambda x: (x-origen).total_seconds()/86400)
             else:
-                copia.iloc[:,col] = copia.iloc[:,col].dt.strftime(formato_fecha)
+                copia[col] = copia[col].dt.strftime(formato_fecha)
     copia = copia.fillna('') #Cambio 2021-02-01. Hacer esto antes del cambio de formato implica que las columnas de tiempo, si tienen nulos, pasan a ser objects, por lo que no las convierte a texto, y la subida petaba.
     #2021-02-01: Ahora también habría que reemplazar los NaT que hubiesen poder haber quedado kaputt:
     copia = copia.replace('NaT','')
@@ -1641,6 +1641,7 @@ def gshEscribirRango(sheets_service, lista, spreadsheetId, nombreHoja, rango, fi
     """
     import pandas
     from datetime import datetime
+    origen = datetime(1899, 12, 30)
     
     sheet = sheets_service.spreadsheets()
     #Comprobamos si la hoja existe. En caso contrario, se crea:
@@ -1651,37 +1652,45 @@ def gshEscribirRango(sheets_service, lista, spreadsheetId, nombreHoja, rango, fi
     
     #Si como 'lista' me han pasado un dataframe lo convierto a lista. 
     #Adicionalmente convierto los NaN a None para que el fillna de a continuación funcione
-    if type(lista) == pandas.core.frame.DataFrame:
-        cabecera = [[nom_columna for nom_columna in lista.columns]] 
-        lista    = [  [None if pd.isna(valor) else valor for valor in fila]   for fila in lista.values.tolist() ]
+    copia = lista.copy()
+    if type(copia) == pandas.core.frame.DataFrame:
+        #Pasamos las columnas de fecha a días de sheets
+        for col in copia.columns:
+            if copia[col].dtype == 'datetime64[ns]':
+                if formato_fecha == '#':
+                    copia[col] = copia[col].apply(lambda x: (x-origen).total_seconds()/86400)
+                else:
+                    copia[col] = copia[col].dt.strftime(formato_fecha)
+
+        cabecera = [[nom_columna for nom_columna in copia.columns]] 
+        copia    = [  [None if pd.isna(valor) else valor for valor in fila]   for fila in copia.values.tolist() ]
         if header:
-            lista = cabecera + lista
-        
-    
+            copia = cabecera + copia
+    else:
+        #Si no es un dataframe, compruebo las fechas
+        for f, fila in enumerate(copia):
+            for c, valor in enumerate(fila):
+                if isinstance(valor, datetime):
+                    if formato_fecha == '#':
+                        copia[f][c] = (valor-origen).total_seconds()/86400
+                    else:
+                        copia[f][c] = valor.strftime(formato_fecha)
     if fillna is not None:
         if type(fillna) == bool and fillna:
             fillna = ''
         if type(fillna) == str:
-            lista = [[fillna if v is None else v for v in l] for l in lista]
+            lista = [[fillna if v is None else v for v in l] for l in copia]
     
-    #Convertimos todo lo que sea fecha a texto:
-    origen = datetime(1899, 12, 30)
-    for f, fila in enumerate(lista):
-        for c, valor in enumerate(fila):
-            if isinstance(valor, datetime):
-                if formato_fecha == '#':
-                    lista[f][c] = (valor-origen).total_seconds()/86400
-                else:
-                    lista[f][c] = valor.strftime(formato_fecha)
         
-    result = sheets_service.spreadsheets().values().update(spreadsheetId = spreadsheetId,
-                                                    range = nombreHoja,
-                                                    body = {
-                                                        'majorDimension': 'ROWS',
-                                                        'values': lista
-                                                    },
-                                                    valueInputOption=modo
-                                                   ).execute()
+    result = sheets_service.spreadsheets().values().update(
+        spreadsheetId = spreadsheetId,
+        range = nombreHoja,
+        body = {
+            'majorDimension': 'ROWS',
+            'values': copia
+        },
+        valueInputOption=modo
+    ).execute()
 
     return result
 
