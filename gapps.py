@@ -100,7 +100,9 @@ Funciones:
     - gslReemplazarTexto: reemplaza un tag por un texto en un documento de google slides
     
 - Google Groups: todas estas funciones necesitan el servicio groups
-    - ggrListarMiembros: recupera los miembros de un google group
+    - ggrAgregarMiembros : añade miembros a un google group
+    - ggrListarMiembros  : recupera los miembros de un google group
+    - ggrQuitarMiembros  : elimina miembros de un google group
     
 - Google Calendar: todas estas funciones necesitan el servicio calendar
     - gclCrearEvento       : Crea un evento en un calendario
@@ -518,7 +520,7 @@ def getDriveIdFromURL(linkdrive, folder=False):
     """
     import re
     if folder or 'drive/folders/' in linkdrive:
-        iddrive = re.match(r'https://drive.google.com/drive/folders/(.*)', linkdrive).group(1)
+        iddrive = re.match(r'https://drive.google.com/drive/folders/([^?]+)', linkdrive).group(1)
     else:
         try:
             iddrive = re.match(r'https://drive.google.com/file/d/(.*)/.*', linkdrive).group(1)
@@ -4883,6 +4885,91 @@ def gslReemplazarTexto(slides_service, presentation_id, campos, textos, envolver
 ######################################################################################################
 # GOOGLE GROUPS
 ######################################################################################################
+def ggrAgregarMiembros(groups_service, group_mail:str, usuarios:"str|tuple|list[str]|list[tuple(str)]"):
+    '''
+    Función que añade miembros a un google group
+
+    Parameters
+    ----------
+    groups_service : (googleapiclient.discovery.Resource) Servicio de google con permisos para escribir en Google People. Se obtiene con el método connect
+    group_mail     : (str) Dirección de correo electrónico del grupo.
+    usuarios      : (str|tuple|list[str]|list[tuple(str)]) Dirección de correo electrónico o lista de direcciones de correo electrónico. 
+        Si vienen en tupla, el primer elemento es la dirección de correo, y el segundo, el tipo de membresía ('OWNER', 'MANAGER', 'MEMBER')
+        Ejemplos:
+            1: 'alex.apellido@dominio.com'
+            2: ('alex.apellido@dominio.com', 'MANAGER')
+            3: ['alex.apellido@dominio.com', 'reyes.apellido@dominio.com']
+            4: [('alex.apellido@dominio.com', 'MANAGER'), ('reyes.apellido@dominio.com', 'MEMBER')]
+    
+    Si no se indica el tipo de membresía, asignará "OWNER" por defecto.
+
+    Devuelve
+    -------
+    (dict{'ok':list, 'ko':list}) Lista con los emails añadidos bajo la clave 'ok' y los fallidos con la clave 'ko'
+    
+    '''
+
+    import re
+    ROLES = ('MEMBER', 'MANAGER', 'OWNER')
+    #Comprobamos que los parámetros son correctos
+    if type(group_mail) != str or not re.match(r'.*@.*', group_mail):
+        raise ValueError('Se esperaba una dirección de correo electrónico para el grupo')
+    
+    if type(usuarios) == str:
+        if not re.match(r'.*@.*', usuarios):
+            raise ValueError('Usuarios esperaba email, (email, rol), emails o lista de (email, rol)')
+        usuarios = [(usuarios, 'MEMBER')]
+    elif type(usuarios) == tuple:
+        if len(usuarios) != 2 or \
+            type(usuarios[0]) != str or \
+            type(usuarios[1]) != str or \
+            not re.match(r'.*@.*', usuarios[1]) or \
+            not usuarios[1] in ROLES:
+                raise ValueError('Usuarios esperaba email, (email, rol), emails o lista de (email, rol)')
+        usuarios = [usuarios]
+    elif type(usuarios) == list:
+        for i, usuario in enumerate(usuarios):
+            if type(usuario) == str:
+                if not re.match(r'.*@.*', usuario):
+                    raise ValueError('Usuarios esperaba email, (email, rol), emails o lista de (email, rol)')
+                usuarios[i] = (usuario, 'MEMBER')
+            elif type(usuario) == tuple:
+                if len(usuario) != 2 or \
+                    type(usuario[0]) != str or \
+                    type(usuario[1]) != str or \
+                    not re.match(r'.*@.*', usuario[0]) or \
+                    not usuario[1] in ROLES:
+                        raise ValueError('Usuarios esperaba email, (email, rol), emails o lista de (email, rol)')
+    else:
+        raise ValueError('Usuarios esperaba email, (email, rol), emails o lista de (email, rol)')
+    
+    #Lo primero es encontrar el nombre interno del grupo:
+    param = "&groupKey.id=" + group_mail# + "&groupKey.namespace=identitysources/bbva.com"
+    lookupGroupNameRequest = groups_service.groups().lookup()
+    lookupGroupNameRequest.uri += param
+    # Given a group ID and namespace, retrieve the ID for parent group
+    lookupGroupNameResponse = lookupGroupNameRequest.execute()
+    groupName = lookupGroupNameResponse.get("name")
+    
+    #Por cada usuario, preparo y hago una llamada:
+    ok = []
+    ko = []
+    for email, rol in usuarios:
+        membership = {
+          "preferredMemberKey": {"id": email},
+          "roles" : [{"name" : 'MEMBER'}]
+        }
+        if rol != 'MEMBER':
+            membership['roles'].append({'name':rol})
+        try :
+            response = groups_service.groups().memberships().create(parent=groupName, body=membership).execute()
+            if response['done']:
+                ok.append(email)
+        except:
+            ko.append(email) 
+    return {'ok':ok, 'ko':ko}
+
+#%%
 def ggrListarMiembros(groups_service, group_mail:str):
     '''
     Recupera los miembros de un google group
@@ -4899,11 +4986,15 @@ def ggrListarMiembros(groups_service, group_mail:str):
         lookup_group_name_request = groups_service.groups().lookup()
         lookup_group_name_request.uri += param
         lookup_group_name_response = lookup_group_name_request.execute()
-        group_name = lookup_group_name_response.get("name")
+        groupName = lookup_group_name_response.get("name")
         # List memberships
-        response = groups_service.groups().memberships().list(parent=group_name).execute()
-        display(response)
-        df = pd.DataFrame.from_dict(response['memberships'])
+        response = groups_service.groups().memberships().list(parent=groupName).execute()
+        miembros = response['memberships']
+        while 'nextPageToken' in response:
+            response = groups_service.groups().memberships().list(parent=groupName, pageToken=response['nextPageToken']).execute()
+            miembros += response['memberships']
+            
+        df = pd.DataFrame.from_dict(miembros)
         df['email']      = df['preferredMemberKey'].apply(lambda x: x['id'])
         df['member']     = df['roles'].apply(lambda x: True if 'MEMBER'  in str(x) else False)
         df['admin']      = df['roles'].apply(lambda x: True if 'MANAGER' in str(x) else False)
@@ -4913,6 +5004,75 @@ def ggrListarMiembros(groups_service, group_mail:str):
     except Exception as e:
         print(e)
         return None
+   
+ 
+#%%
+def ggrQuitarMiembros(groups_service, group_mail:str, usuarios:"str|tuple|list[str]|list[tuple(str)]"):
+    '''
+    Función que quita miembros de un google group
+
+    Parameters
+    ----------
+    groups_service : (googleapiclient.discovery.Resource) Servicio de google con permisos para escribir en Google People. Se obtiene con el método connect
+    group_mail     : (str) Dirección de correo electrónico del grupo.
+    usuarios       : (str|list[str]) Dirección de correo electrónico o lista de direcciones de correo electrónico. 
+        Ejemplos:
+            1: 'alex.apellido@dominio.com'
+            2: ['alex.apellido@dominio.com', 'reyes.apellido@dominio.com']
+    
+    Devuelve
+    -------
+    (dict{'ok':list, 'ko':list}) Lista con los emails eliminados bajo la clave 'ok' y los fallidos con la clave 'ko'
+    
+    '''
+
+    import re
+    #Comprobamos que los parámetros son correctos
+    if type(group_mail) != str or not re.match(r'.*@.*', group_mail):
+        raise ValueError('Se esperaba una dirección de correo electrónico para el grupo')
+    
+    if type(usuarios) == str:
+        if not re.match(r'.*@.*', usuarios):
+            raise ValueError('Usuarios esperaba email, (email, rol), emails o lista de (email, rol)')
+        usuarios = [usuarios]
+    elif type(usuarios) == list:
+        for i, usuario in enumerate(usuarios):
+            if type(usuario) == str:
+                if not re.match(r'.*@.*', usuario):
+                    raise ValueError('Usuarios esperaba email, (email, rol), emails o lista de (email, rol)')
+    else:
+        raise ValueError('Usuarios esperaba email, (email, rol), emails o lista de (email, rol)')
+    
+    #Lo primero es encontrar el nombre interno del grupo:
+    param = "&groupKey.id=" + group_mail# + "&groupKey.namespace=identitysources/bbva.com"
+    lookupGroupNameRequest = groups_service.groups().lookup()
+    lookupGroupNameRequest.uri += param
+    # Given a group ID and namespace, retrieve the ID for parent group
+    lookupGroupNameResponse = lookupGroupNameRequest.execute()
+    groupName = lookupGroupNameResponse.get("name")
+
+    #Listamos a los miembros del grupo:
+    response = groups_service.groups().memberships().list(parent=groupName).execute()
+    miembros = response['memberships']
+    while 'nextPageToken' in response:
+        response = groups_service.groups().memberships().list(parent=groupName, pageToken=response['nextPageToken']).execute()
+        miembros += response['memberships']
+    miembros = {miembro['preferredMemberKey']['id']:miembro['name'] for miembro in miembros}
+    #Por cada usuario, preparo y hago una llamada:
+    ok = []
+    ko = []
+    for email in usuarios:
+        try :
+            if usuario not in miembros:
+                print('El usuario no está en el grupo')
+                continue
+            
+            response = groups_service.groups().memberships().delete(name=miembros[usuario]).execute()
+            if response['done']:
+                ok.append(email)
+        except:
+            ko.append(email) 
+    return {'ok':ok, 'ko':ko}
     
 #%%
 ######################################################################################################
