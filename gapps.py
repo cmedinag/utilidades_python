@@ -78,23 +78,23 @@ Funciones:
         - ggmObtenerCorreosHilo: lista los mensajes asociados a un hilo de correos.
     
 - Google Drive: todas estas funciones necesitan el servicio 'drive'
-    - gdrBorrarFichero: elimina un fichero de google drive.
-    - gdrCambiarPermisos: cambia los permisos de un elemento en drive.
-    - gdrCrearCarpeta: crea una nueva carpeta en Drive.
-    - gdrCopiarDocumento: realiza una copia de un documento drive.
-    - gdrDescargarFichero: descargará un fichero de google drive en una ruta indicada.
-    - gdrFindSharedDrive: busca una unidad compartida por nombre y devuelve su id.
-    - gdrGetFileProperties: devuelve todas las propiedades de un fichero.
-    - gdrGetFileRevisions: devuelve un listado de versiones de un fichero.
-    - gdrGetFolderId: devuelve los identificadores de las carpetas encontradas en una ruta.
-    - gdrListFiles: lista los ficheros contenidos en una carpeta de drive.
-    - gdrMoveFile: mueve un fichero de una carpeta a otra.
-    - gdrRenombrarFicheroç
-    - gdrSubirVersión: a partir de un fichero local, sube una nueva versión a un fichero ya existente en Google Drive.
-    - gdrUploadFile: sube un fichero local a Google Drive.
-    - gdrUploadFolder: sube una carpeta local y todo su contenido a Google Drive.
-    - gdrRecursiveFind:  Función que realiza una búsqueda recursiva de todos los ficheros que están
-    dentro de una carpeta
+    - gdrBorrarFichero     : elimina un fichero de google drive.
+    - gdrCambiarPermisos   : cambia los permisos de un elemento en drive.
+    - gdrCrearCarpeta      : crea una nueva carpeta en Drive.
+    - gdrCopiarDocumento   : realiza una copia de un documento drive.
+    - gdrDescargarCarpeta  : descarga todos los ficheros de una carpeta y, opcionalmente sus subcarpetas.
+    - gdrDescargarFichero  : descargará un fichero de google drive en una ruta indicada.
+    - gdrFindSharedDrive   : busca una unidad compartida por nombre y devuelve su id.
+    - gdrGetFileProperties : devuelve todas las propiedades de un fichero.
+    - gdrGetFileRevisions  : devuelve un listado de versiones de un fichero.
+    - gdrGetFolderId       : devuelve los identificadores de las carpetas encontradas en una ruta.
+    - gdrListFiles         : lista los ficheros contenidos en una carpeta de drive.
+    - gdrMoveFile          : mueve un fichero de una carpeta a otra.
+    - gdrRenombrarFichero  : renombra un fichero en Google Drive.
+    - gdrSubirVersión      : a partir de un fichero local, sube una nueva versión a un fichero ya existente en Google Drive.
+    - gdrUploadFile        : sube un fichero local a Google Drive.
+    - gdrUploadFolder      : sube una carpeta local y todo su contenido a Google Drive.
+    - gdrRecursiveFind     : Función que realiza una búsqueda recursiva de todos los ficheros que están dentro de una carpeta.
 
 - Google Slides: todas estas funciones necesitan el service slides
     - gslReemplazarTexto: reemplaza un tag por un texto en un documento de google slides
@@ -4219,6 +4219,95 @@ def gdrCrearCarpeta(drive_service, nombre, padreId = None):
     drive_response = drive_service.files().create(body=file_metadata, fields='id', supportsAllDrives=True).execute()
     
     return drive_response
+
+#%%
+def gdrDescargarCarpeta(drive_service, folder_id:str, rutaDescarga:str, incluyeSubcarpetas:bool=False, sobreescribir:bool=False, logs:bool=True, sharedDrive:bool=False):
+    """
+    Esta función descargará los ficheros de una carpeta en google drive dado el identificador de la carpeta.
+    drive_service       -- Objeto servicio con permisos de lectura en Google Drive. Se obtiene con el método connect y el servicio 'drive'.
+    folder_id           -- (str) Identificador de la carpeta en Drive cuyos ficheros serán descargados.
+    rutaDescarga        -- (str) Carpeta en la que dejar el fichero. Si no se indica, lo dejará en la carpeta de trabajo.
+    incluyeSubcarpetas  -- (bool) Default False. Indica si la descarga incluye la descarga de subcarpetas y sus ficherso
+                           En Windows se recomienda mantener un máximo de 260 caracteres como nombre de ruta de descarga
+                           lo que abarca el nombre del fichero.
+    sobreescribir       -- (bool) Default False. Indica si debe machacar el fichero en caso de que exista, o crear un nombre nuevo en su lugar.
+    logs                -- (bool) Default True. Indica si debe mostrar por pantalla el progreso de la descarga.
+    sharedDrive         -- (bool) Default False. Indica si el fichero se encuentra en una unidad compartida
+
+    return              -- (dict) Diccionario con dos listas, 'descargas' con las rutas locales de los ficheros descargados, y 'errores', con los detalles de los ficheros que no ha podido descargar.
+    """
+    import os
+    from googleapiclient.http import MediaIoBaseDownload
+    page_token = None
+    respuesta = {'descargas':[], 'errores':[]}
+    while True:
+        results = drive_service.files().list(
+            q                         = f"'{folder_id}' in parents and trashed=false",
+            supportsAllDrives         = sharedDrive,
+            includeItemsFromAllDrives = sharedDrive,
+            pageSize                  = 10, 
+            fields                    = "nextPageToken, files(id, name, mimeType)",
+            pageToken                 = page_token
+        ).execute()
+        todosLosFicheros = results.get('files', [])
+
+        if not todosLosFicheros:
+            print('No existen ficheros en la carpeta: ' + folder_id)
+            break
+        else:
+            for nFichero in todosLosFicheros:
+                elementoDescargar = True
+                file_id = nFichero['id']
+                mimeType = None
+                # ***************************************************
+                if logs:
+                    print('mimetype original:', nFichero['mimeType'])
+
+                nombre = nFichero['name']
+
+                # Google Folder:
+                if nFichero['mimeType'] == 'application/vnd.google-apps.folder':
+                    if incluyeSubcarpetas == True:
+                        # verificar que la ruta de descarga existe sino la crea
+                        ruta_descarga_secundaria = rutaDescarga + "/" + nombre
+                        if not os.path.exists(ruta_descarga_secundaria):
+                            os.makedirs(ruta_descarga_secundaria)
+                        print("Procesando Subcarpeta: " + ruta_descarga_secundaria)
+                        respuesta_sub = gdrDescargarCarpeta(drive_service, file_id, ruta_descarga_secundaria, incluyeSubcarpetas, sobreescribir, logs, sharedDrive)
+                        for clave in respuesta_sub:
+                            respuesta[clave] += respuesta_sub[clave]
+                    elementoDescargar = False
+
+                # Descarga efectiva del fichero
+                # ***************************************************
+                if (elementoDescargar == True):
+                    try:
+                        print('Procesando ' + u'{0} ({1})'.format(nFichero['name'], nFichero['id']))
+
+                        fichero = gdrDescargarFichero(
+                            drive_service = drive_service, 
+                            fileId        = file_id, 
+                            rutaDescarga  = rutaDescarga, 
+                            sobreescribir = sobreescribir, 
+                            logs          = logs, 
+                            sharedDrive   = sharedDrive
+                        )
+                        respuesta['descargas'].append(fichero)
+                    except:
+                        print("Excepcion: Hubo alguna incidencia en la descarga del siguiente elemento. Name: "+ nombre + " Id: " + file_id)
+                        respuesta['errores'].append({'nombre':nombre, 'id':file_id, 'carpeta':folder_id})
+
+                else:
+                    if incluyeSubcarpetas == True:
+                        print("Descargada de Subcarpeta Completada")
+                    else:
+                        print('No se descargan las subcarpetas existentes dentro de la carpeta especificada. Name: '+ nombre + " Id: " + file_id)
+
+        page_token = results.get('nextPageToken', None)
+        if page_token is None:
+            break
+
+    return respuesta
 
 #%%
 def gdrDescargarFichero(drive_service, fileId, rutaDescarga = None, mimeType = None, sobreescribir = False, logs = True, sharedDrive = False):
