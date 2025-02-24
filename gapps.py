@@ -7,6 +7,8 @@ Antes de poder utilizar las funciones, es necesario almacenar en una variable la
 Funciones:
 ----------
 - Propósito general:
+    - autoSetProxy: detecta si hace falta proxy para salidr a internet y si es así, establece el proxy que reciba como parámetro
+    - autoInstalarPaquete: comprueba si una librería está instalada en el sistema, y, de no ser así, la instala con pip
     - comprobarMailsDominios: Comprueba si un conjunto de direcciones forman parte de los dominios aceptados
     - connect: Conecta con los servicios de Google para poder usarlos.
     - getDriveIdFromURL: Devuelve el id de un fichero o carpeta a partir de su url
@@ -17,12 +19,14 @@ Funciones:
 
 - Google Sheets: todas estas funciones necesitan el servicio 'sheets'
     - Estructurales:
+        - gshAjustarDimensionHoja: ajusta el número de filas y columnas de una hoja
         - gshBorrarHoja: elimina una hoja en un libro de google.
         - gshBorrarVistaFiltro: borra una vista de filtro, si existe.
         - gshCrearActualizarVistaFiltro: Actualiza o crea una o varias vistas de filtro
         - gshCrearHoja: crea una nueva hoja en un libro de google.
         - gshCrearLibro: crea un nuevo libro GSheets y lo deja en "Mi unidad".
         - gshDuplicarHoja: duplica una hoja en un libro de google.
+        - gshLeerPropiedadesLibro: Devuelve un diccionario con las propiedades solicitadas de un libro de gsheets.
         - gshListarOpcionesFiltro: Devuelve una lista con los posibles valores que puede tomar una opción de filtro.
         - gshObtenerRangosProtegidos: Devuelve todos los rangos protegidos de un libro.
         - gshObtenerVistasFiltro: devuelve los nombres e ids de las vistas de filtro de hoja de google
@@ -30,7 +34,9 @@ Funciones:
         - gshProtegerRango: Esta función protege uno o varios rangos de un libro.
         - gshRenombrarLibro: Renombra un libro de gsheets.
         - gshValidacionDesplegableRango: crea validaciones de lista desplegable en un rango de celdas.
+        - gshAgruparRango: agrupa filas/columnas dentro de una spreadsheet
     - Lectura / Escritura
+        - gshAñadirFilas: añade filas a continuación de una tabla
         - gshDescargarHoja: exporta una sola hoja de una gsheet.
         - gshEscribirHoja: escribe un pandas dataframe en una hoja de google.
         - gshEscribirRango: escribe una lista de valores en una hoja de google.
@@ -53,6 +59,7 @@ Funciones:
         - gshFormatoCondicionalRango: Genera las reglas de formato condicional en un conjunto de rangos. 
         - gshTraducirColor: Recibe un color RGB y lo traduce a su representación JSON
         - gshTraducirRango: traduce un rango tipo 'A5:J27' a un objeto tipo GridRange de la API google
+        - gshTraducirRangov2: Función que devuelve un objeto con coordenadas para proporcionar a una request de gsheets que exija coordenadas en formato diccionario.
         - gshTraducirRangoInverso: traduce la representación JSON de un rango a formato de una sheet    
     
 - Google Docs: todas estas funciones necesitan el servicio 'docs'
@@ -114,7 +121,19 @@ Funciones:
     - gctBuscarPersonas    : Realiza una búsqueda de personas en el directorio
     
 """
+
 from __future__ import print_function
+__version__ = '20250109.0'
+__changelog__ = '''
+[2025-01-09] - Se incorpora la función gshAñadirFilas.
+[2024-11-29] - Se da la opción de añadir id de adjunto en ggmCreateMessageWithAttachments.
+'''
+
+#%% IMPORTACIÓN DE LIBRERÍAS
+from typing import Literal, Optional, Union, Tuple, List
+import mimetypes
+import pandas as pd
+
 #Para conseguir las credenciales, acceder a esta URL:
 #https://developers.google.com/sheets/api/quickstart/python
 #Pulsar en enable API y DOWNLOAD CLIENT CONFIGURATION
@@ -157,7 +176,13 @@ def autoSetProxy(proxy = "http://proxyvip:8080", url='https://pypi.python.org/si
                 os.environ['https_proxy'] = ''
     return False
 
-def autoInstalarPaquete(libreria:str, alt:'str|None'=None, log:bool=False, upgrade:bool=False):
+
+def autoInstalarPaquete(
+    libreria : str, 
+    alt      : Optional[str] = None, 
+    log      : bool          = False, 
+    upgrade  : bool          = False
+):
     '''
     Función que comprueba si una librería está instalada en el sistema, y, de no ser así, la instala con pip.
     
@@ -228,7 +253,7 @@ def resetProxy():
     import os
     os.environ["HTTPS_PROXY"] = ""
 
-#%%
+#%% str2ascii
 
 def str2ascii(cadena):
     "Función que recibe una cadena y la devuelve cambiando caracteres latinos por caracteres ascii-7."
@@ -248,7 +273,7 @@ def str2ascii(cadena):
         table[ord(l.upper())] = table[l].upper()
     return str(cadena).translate(table)
 
-#%%
+#%% getUserPwd
 def getUserPwd(titulo = 'Introduzca usuario y clave' , user=None):
     """
     Solicita mediante ventana gráfica usuario y contraseña. 
@@ -314,39 +339,16 @@ autoInstalarPaquete('google-api-python-client', 'googleapiclient')
 autoInstalarPaquete('google-auth-httplib2', 'httplib2')
 autoInstalarPaquete('google-auth-oauthlib', 'google_auth_oauthlib')
 
-#%%
-#!pip install --upgrade google-api-python-client google-auth-httplib2 google-auth-oauthlib
-
-#%%
-import pickle
-import os
-import os.path
-import re
-from apiclient import errors
-
-from googleapiclient.discovery import build
-from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.transport.requests import Request
-
-import base64
-from email.mime.audio import MIMEAudio
-from email.mime.base import MIMEBase
-from email.mime.image import MIMEImage
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.encoders import encode_base64
-import mimetypes
-
-from apiclient.http import MediaFileUpload,MediaIoBaseDownload
-from apiclient.discovery import build
-from httplib2 import Http
-
-import pandas as pd
-
-# If modifying these scopes, delete the file token.pickle.
-#SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
-#%%  
-def connect(ruta_credenciales = './', archivo_credenciales = 'credentials.json', ruta_token = None, archivo_token='token.pickle', services=[], port=0):
+#%% connect
+def connect(
+    ruta_credenciales    = './', 
+    archivo_credenciales = 'credentials.json', 
+    ruta_token           = None, 
+    archivo_token        = 'token.pickle', 
+    services             = [], 
+    port                 = 0,
+    timeout              = None,
+):
 
     """Shows basic usage of the Sheets API.
     Establece una conexión con Google para poder leer excels de Drive.
@@ -357,6 +359,7 @@ def connect(ruta_credenciales = './', archivo_credenciales = 'credentials.json',
     archivo_token        -- (str) Nombre del archivo que contiene o contendrá las credenciales de google ya aceptadas. Si se proporciona no solicita pantalla de permiso y lo genera. ('token.pickle' por defecto).
     services             -- lista de (str). Indica los servicios para los que se solicita canal. Ejemplos: ['sheets'], ['sheets', 'drive', 'docs']
     port                 -- (int) Indica el puerto en el que se quiere hacer la conexion. Por defecto 0
+    timeout              -- (None|int) Indica el tiempo en segundos de timeout para llamadas.
     
     Salida:
     (diccionario) Diccionario cuya clave será el tipo de servicio y como valor el objeto servicio adecuado. Ej.: {'sheets': (objeto servicio de google)}.
@@ -377,6 +380,7 @@ def connect(ruta_credenciales = './', archivo_credenciales = 'credentials.json',
     from google_auth_oauthlib.flow import InstalledAppFlow
     from googleapiclient.discovery import build
     from google.auth.transport.requests import Request
+    import httplib2, google_auth_httplib2
     import pickle
 
     if ruta_credenciales.strip() != '' and (not (ruta_credenciales.endswith('/') or ruta_credenciales.endswith('\\'))):
@@ -438,10 +442,18 @@ def connect(ruta_credenciales = './', archivo_credenciales = 'credentials.json',
             pickle.dump(creds, token)
     
     service_dict = {}
+    import socket
+    timeout_in_sec = 60*3 # 3 minutes timeout limit
+    socket.setdefaulttimeout(timeout_in_sec)
     for service in services:
         try:
             if service == 'sheets':
-                service_dict[service] = build('sheets', 'v4', credentials=creds)
+                if type(timeout) == int:
+                    http = httplib2.Http(timeout=timeout)
+                    auth_http = google_auth_httplib2.AuthorizedHttp(creds, http=http)
+                    service_dict[service] = build('sheets', 'v4', http=auth_http)
+                else:
+                    service_dict[service] = build('sheets', 'v4', credentials=creds)
             elif service == 'drive':
                 service_dict[service] = build('drive', 'v3', credentials=creds)
             elif service == 'docs':
@@ -464,10 +476,11 @@ def connect(ruta_credenciales = './', archivo_credenciales = 'credentials.json',
                 service_dict[service] = build('script', 'v1', credentials=creds)
         except Exception as err:
             service_dict[service] = 'Error: ' + str(err)
+    socket.setdefaulttimeout(None)
     return service_dict
 
 
-
+#%% comprobarMailsDominios
 def comprobarMailsDominios (mails_destinatarios, dominios_aceptados):
     """
     Comprueba si un conjunto de direcciones forman parte de los dominios aceptados
@@ -504,7 +517,7 @@ def comprobarMailsDominios (mails_destinatarios, dominios_aceptados):
     return True
 
 
-#%%
+#%% getDriveIdFromURL
 def getDriveIdFromURL(linkdrive, folder=False):
     """
     Devuelve el id de un fichero o carpeta en Drive a partir de su url
@@ -523,17 +536,15 @@ def getDriveIdFromURL(linkdrive, folder=False):
         iddrive = re.match(r'https://drive.google.com/drive/folders/([^?]+)', linkdrive).group(1)
     else:
         try:
-            iddrive = re.match(r'https://drive.google.com/file/d/(.*)/.*', linkdrive).group(1)
+            iddrive = re.match(r'https://drive.google.com/file/d/([^/]+)', linkdrive).group(1)
         except:
-            iddrive = re.match(r'https://docs.google.com/.*/d/(.*)/.*', linkdrive).group(1)
+            iddrive = re.match(r'https://docs.google.com/.*/d/([^/]+)', linkdrive).group(1)
     return iddrive
-#%%
 
-
-#%%
-######################################################################################################
-# GOOGLE SHEETS
-######################################################################################################
+#%% ______________________________________________________________________________________________________
+#######################################################################################################
+#%% GOOGLE SHEETS
+#######################################################################################################
 FORMATOS_BASE = {
         'euro_2_dec'            : {"type" : "CURRENCY" , "pattern" : '#,##0.00 €'} ,
         'euro_no_dec'           : {"type" : "CURRENCY" , "pattern" : '#,##0 €'   },
@@ -558,7 +569,170 @@ FORMATOS_BASE = {
         'texto_26_posic'        : {"type" : "TEXT"     , "pattern" : '00000000000000000000000000_@'}
         }
 
+#%% gshAjustarDimensionHoja
+def gshAjustarDimensionHoja(
+    sheets_service, 
+    spreadsheetId : str, 
+    nombreHoja    : str, 
+    idHoja        : str           = None,
+    numFilas      : Optional[int] = None,
+    numCols       : Optional[int] = None,
+):
+    """Función que ajusta el número de filas y columnas de una hoja.
+
+    Args:
+        sheets_service (service object): Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
+        spreadsheetId (str): Identificador del libro en Google Drive
+        nombreHoja (str): Nombre de la hoja en el libro
+        idHoja (str, optional): Id de la hoja dentro de la spreadsheet. Si se especifica este parámetro se ignora el 'nombreHoja'. Defaults to None.
+        numFilas (int|None, optional): Nuevo número de filas. None si no hay que ajustarlas.
+        numCols (int|None, optional): Nuevo número de columnas. None si no hay que ajustarlas.
+
+    Returns:
+        dict: Respuesta de la llamada al servicio de google
+    """
+    if type(numFilas) != int and numFilas is not None:
+        raise TypeError("El argumento numFilas debe ser int o None")
+    if type(numCols) != int and numCols is not None:
+        raise TypeError("El argumento numCols debe ser int o None")
+    if numFilas is None and numCols is None:
+        raise Exception("Debe informarse o bien numFilas o bien numCols")
+    
+    if idHoja is None:
+        idHoja = gshObtenerIDHoja(sheets_service, spreadsheetId, nombreHoja)
+        if idHoja is None:
+            return None
+        
+    requests = [{
+        "updateSheetProperties": {
+            "properties": {
+                "sheetId": idHoja,
+                "gridProperties": {}
+            },
+            "fields": ""
+        }
+    }]
+    fields = []
+    if numFilas is not None:
+        requests[0]['updateSheetProperties']['properties']['gridProperties']['rowCount'] = numFilas
+        fields.append("gridProperties.rowCount")
+    if numCols is not None:
+        requests[0]['updateSheetProperties']['properties']['gridProperties']['columnCount'] = numCols
+        fields.append("gridProperties.columnCount")
+    requests[0]['updateSheetProperties']['fields'] = ','.join(fields)
+
+    # Ejecutar el batchUpdate para modificar filas y columnas
+    body = {
+        'requests': requests
+    }
+    # print(body)
+    return sheets_service.spreadsheets().batchUpdate(spreadsheetId=spreadsheetId, body=body).execute()
+
 #%%
+def _dataframe_a_lista(
+    dataframe                    : pd.DataFrame, 
+    header                       : bool         = True, 
+    formato_fecha                : str          = '#',
+    conversion_exhaustiva_fechas : bool         = False
+):
+    """Función que convierte un dataframe a una lista de listas preparada para subir a Sheets
+
+    Args:
+        dataframe (pd.DataFrame): datos que subir
+        header (bool, optional): Determina si debe incluir los nombres de columna. Defaults to True.
+        formato_fecha (str, optional): Indica el formato de escritura de fechas. en formato máscara python. Por defecto, '#' para indicar el número de días desde 30/12/1899. Defaults to '#'.
+        conversion_exhaustiva_fechas (bool, optional): Indica si debe revisar celda a celda del dataframe para convertir fechas antes de subir a drive. Defaults to False.
+
+    Returns:
+        list: lista de listas.
+    """    
+    from datetime import datetime
+
+    copia = dataframe.copy()
+    #2021-12-14: Puede haber varias columnas con el mismo nombre. En ese caso, el dtype fallaría porque no devolvería una serie, sino un df. Corregimos usando iloc.
+    origen = datetime(1899, 12, 30)
+    for col in copia.columns:
+        if not conversion_exhaustiva_fechas:
+            if copia[col].dtype == 'datetime64[ns]':
+                if formato_fecha == '#':
+                    copia[col] = copia[col].apply(lambda x: (x-origen).total_seconds()/86400)
+                else:
+                    copia[col] = copia[col].dt.strftime(formato_fecha)
+        else:
+            for fila, celda in copia[col].items():
+                if isinstance(celda, datetime):
+                    if formato_fecha == '#':
+                        copia.loc[fila, col] = (celda-origen).total_seconds()/86400
+                    else:
+                        copia.loc[fila, col] = celda.strftime(formato_fecha)
+                
+        
+    copia = copia.fillna('') #Cambio 2021-02-01. Hacer esto antes del cambio de formato implica que las columnas de tiempo, si tienen nulos, pasan a ser objects, por lo que no las convierte a texto, y la subida petaba.
+    #2021-02-01: Ahora también habría que reemplazar los NaT que hubiesen poder haber quedado kaputt:
+    copia = copia.replace('NaT','')
+    
+    lista = copia.values.tolist()
+    
+    if header:
+        lista.insert(0, dataframe.columns.tolist())
+
+    return lista
+    
+#%% gshAñadirFilas
+# https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets.values/append
+# https://developers.google.com/sheets/api/guides/values#append_values
+def gshAñadirFilas(
+    sheets_service,
+    spreadsheetId  : str,
+    nombreHoja     : str,
+    datos          : pd.DataFrame,
+    rango          : str = None,
+    header         : bool = False,
+    formato_fecha  : str                    = '#', 
+    conversion_exhaustiva_fechas : bool     = False, 
+    modo           : Literal["RAW", "USER_ENTERED"] = 'RAW', 
+) -> dict:
+    """
+    Función que añade filas al final de la tabla que encuentre en el rango dado.
+
+    Parámetros:
+    -----------
+    sheets_service               : (service object) Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
+    spreadsheetId                : (str) Identificador del libro en Google Drive.
+    nombreHoja                   : (str) Nombre de la hoja en la que se desea escribir dentro del libro.
+    datos                        : (pandas DataFrame) Datos que escribir.
+    rango                        : (str, opcional) Rango en el que buscar la tabla existente en notación A1. Por defecto, 'A1'. Ejemplo: 'C6:O12'
+    header                       : (bool, opcional) Indica si debe incluir la cabecera de los datos. Por defecto, False
+    formato_fecha                : (str, optional): Indica el formato de escritura de fechas. en formato máscara python. Por defecto, '#' para indicar el número de días desde 30/12/1899. Defaults to '#'.
+    conversion_exhaustiva_fechas : (bool, optional) Indica si debe revisar celda a celda del dataframe para convertir fechas antes de subir a drive. Defaults to False.
+
+    Devuelve:
+    ---------
+    dict : Resultado de la invocación al servicio
+    """
+
+    if rango is None:
+        rango = 'A1'
+    
+    #Primero hay que determinar si existe la hoja:
+    nombres = gshObtenerNombreHojas(sheets_service, spreadsheetId)
+    
+    if nombreHoja not in nombres:
+        #La hoja no está. Hay que crearla.
+        return gshEscribirHoja(sheets_service=sheets_service, spreadsheetId=spreadsheetId, dataframe=datos, nombreHoja=nombreHoja, rango=rango, header=True, conversion_exhaustiva_fechas=True)
+    else:
+        if '!' not in rango:
+            rango = f"'{nombreHoja}'!{rango}"
+        lista = _dataframe_a_lista(dataframe=datos, header=header, formato_fecha=formato_fecha, conversion_exhaustiva_fechas=conversion_exhaustiva_fechas)
+        body = {"values": lista}
+        return sheets_service.spreadsheets().values().append(
+                spreadsheetId    = spreadsheetId,
+                range            = rango,
+                valueInputOption = modo,
+                body             = body,
+            ).execute()
+
+#%% gshBordearRango
 #https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets/cells?hl=en#borders
 def gshBordearRango(
     sheets_service, 
@@ -652,7 +826,7 @@ def gshBordearRango(
     
     return True
 
-#%%
+#%% gshBorrarHoja
 def gshBorrarHoja(sheets_service, spreadsheetId, nombreHoja=None, idHoja=None):
     """
     Esta función elimina una hoja en un libro de google.
@@ -691,7 +865,7 @@ def gshBorrarHoja(sheets_service, spreadsheetId, nombreHoja=None, idHoja=None):
     else:
         print('La hoja no existe, no se realiza ninguna acción')
 
-#%%
+#%% gshBorrarVistaFiltro
 def gshBorrarVistaFiltro(sheets_service, spreadsheetId, nombreHoja, idVista=None):
     """
     Esta funcion borra una o varias vistas de filtro, si existen. Devuelve True si se borra bien, False si hay un error o no existe.
@@ -756,7 +930,7 @@ def gshBorrarVistaFiltro(sheets_service, spreadsheetId, nombreHoja, idVista=None
     
     return True
 
-#%%
+#%% gshCombinarCeldas
 def gshCombinarCeldas(sheets_service, spreadsheetId:str, nombreHoja:str, filaInicio:int, colInicio:int, filaFin:int, colFin:int, modo:str = 'completo'):
     """
     Esta funcion combina celdas.
@@ -810,9 +984,8 @@ def gshCombinarCeldas(sheets_service, spreadsheetId:str, nombreHoja:str, filaIni
         return False
     
     return True
-#%%
-def gshCrearActualizarVistaFiltro(sheets_service, spreadsheetId, nombreHoja, 
-                                  nombreVista , idVista=None, primeraCelda = 'A1', condiciones = [], idHoja = None):
+#%% gshCrearActualizarVistaFiltro
+def gshCrearActualizarVistaFiltro(sheets_service, spreadsheetId, nombreHoja, nombreVista , idVista=None, primeraCelda = 'A1', condiciones = [], idHoja = None):
     """
     Esta funcion actualiza una o varias vistas de filtro, si existen. Si no, crea una/s vista/s de filtro. Devuelve sus IDs.
     OJO! Si se quiere modificar una vista de filtro, se pueden modificar sus condiciones, pero no su rango. Para eso deberá 
@@ -864,6 +1037,11 @@ def gshCrearActualizarVistaFiltro(sheets_service, spreadsheetId, nombreHoja,
 
     """
     
+    # Documentación en google:
+    # https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets/request#AddFilterViewRequest
+    # https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets/sheets#FilterView
+    # https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets/other#FilterSpec
+    
     if idHoja is None:
         idHoja = gshObtenerIDHoja(sheets_service, spreadsheetId, nombreHoja) 
         
@@ -907,9 +1085,7 @@ def gshCrearActualizarVistaFiltro(sheets_service, spreadsheetId, nombreHoja,
     elif type(idVista) == str:
         idVista=[idVista]
         
-    
-    vistas_actuales = gshObtenerVistasFiltro(sheets_service, spreadsheetId, nombreHoja)
-    
+    #Capturamos los índices de filas y columnas
     rango_filtro = gshTraducirRango(rangoLetras = primeraCelda, sheetId=idHoja)
     rango_filtro.pop('endColumnIndex', None)
     rango_filtro.pop('endRowIndex', None)
@@ -918,14 +1094,19 @@ def gshCrearActualizarVistaFiltro(sheets_service, spreadsheetId, nombreHoja,
     primera_fila_tx = str(rango_filtro['startRowIndex']  + 1 ) 
     
     #Para luego poder generar las condiciones, me traigo las columnas de la gsheet    
-    columnas_hoja = [col.upper() for col in gshLeerHoja(sheets_service, spreadsheetId, nombreHoja, rango = primera_fila_tx+':' + primera_fila_tx).columns]
+    nombres_columnas = gshLeerHoja(sheets_service, spreadsheetId, nombreHoja, rango = primera_fila_tx+':' + primera_fila_tx)
+    columnas_hoja = [col.upper() for col in nombres_columnas.columns]
     
     
+    #Recuperamos las vistas actuales por si hay que actualizar alguna
+    vistas_actuales = gshObtenerVistasFiltro(sheets_service, spreadsheetId, nombreHoja)
+    
+    #Vamos a montar el objeto requests para batchUpdate
     requestsVistas = []
     for indiceVista, vistaActual in enumerate(nombreVista):
+        #Sacamos a sendas variables el id y las condiciones correspondientes pedidas para este filtro
         idVistaActual = idVista[indiceVista]
         condicionesActuales = condiciones[indiceVista]
-        
         
         #Si esa hoja en particular no tiene vistas de filtro, hay que crearla.
         if len(vistas_actuales) == 0:
@@ -935,48 +1116,95 @@ def gshCrearActualizarVistaFiltro(sheets_service, spreadsheetId, nombreHoja,
         elif (idVistaActual is not None) and (int(idVistaActual) in vistas_actuales.values() ) :
             tipo_request = 'updateFilterView'
           
-        #En otro caso, tengo que crear la vista de cero.
+        #Si no hay id, pero el nombre está en la lista de vistas de filtro:
+        elif idVistaActual is None and vistaActual in vistas_actuales:
+            idVistaActual = vistas_actuales[vistaActual]
+            tipo_request = 'updateFilterView'
+            
         else:
             tipo_request = 'addFilterView'
             
+        #BLOQUE DEPRECADO
+        # #Generamos las condiciones. Para ello localizo las columnas de las condiciones en las de la gsheet
+        # criterios = {}
+        # cols_solicitadas_filtro = [condicion['columna'].upper() for condicion in condicionesActuales ]
         
-        #Generamos las condiciones. Para ello localizo las columnas de las condiciones en las de la gsheet
-        criterios = {}
-        cols_solicitadas_filtro = [condicion['columna'].upper() for condicion in condicionesActuales ]
-        
-        #Ahora, por cada columna de la gsheet, si me han solicitado un filtro, lo pongo. Si no, le quito el filtro (pongo {})
-        for indice, columna in enumerate(columnas_hoja):
-            if columna not in cols_solicitadas_filtro:
-                criterios[indice] = {}
-            else:
-                indice_condicion = cols_solicitadas_filtro.index(columna)
-                condicion = condicionesActuales[indice_condicion] 
+        # #Ahora, por cada columna de la gsheet, si me han solicitado un filtro, lo pongo. Si no, le quito el filtro (pongo {})
+        # for indice, columna in enumerate(columnas_hoja):
+        #     if columna not in cols_solicitadas_filtro:
+        #         criterios[indice] = {}
+        #     else:
+        #         indice_condicion = cols_solicitadas_filtro.index(columna)
+        #         condicion = condicionesActuales[indice_condicion] 
                 
-                if condicion['tipo_condicion'] == 'hiddenValues':
-                    criterios[indice] = { 'hiddenValues': condicion['valor'] }
+        #         if condicion['tipo_condicion'] == 'hiddenValues':
+        #             criterios[indice] = { 'hiddenValues': condicion['valor'] }
                     
-                else:
-                    criterios[indice] = { 'condition': { 'type': condicion['tipo_condicion'], 'values':{"userEnteredValue":condicion['valor']}  }  }
+        #         else:
+        #             criterios[indice] = { 'condition': { 'type': condicion['tipo_condicion'], 'values':{"userEnteredValue":condicion['valor']}  }  }
                 
                   
-        #Preparamos la solicitud de actualizacion
+        # #Preparamos la solicitud de actualizacion
+        # FilterViewRequest = {
+        #     tipo_request: {
+        #         'filter': {
+        #             'title': vistaActual,
+        #             'range': rango_filtro,
+        #             'criteria': criterios
+        #         }
+        #     }
+        # }
+        # 
+        # if tipo_request == 'updateFilterView':
+        #     FilterViewRequest['updateFilterView']['filter']['filterViewId'] = str(idVistaActual)
+        #     FilterViewRequest['updateFilterView']['fields'] = {'paths': ['criteria', 'title'] }
+        # FIN BLOQUE DEPRECADO
+        
+        # Generamos las especificaciones de filtro.
+        filter_specs = []
+        for condicion in condicionesActuales:
+            #A partir del nombre de columna, recuperamos su posición
+            columna_index = columnas_hoja.index(condicion['columna'].upper())
+            if not isinstance(condicion['valor'], list):
+                condicion['valor'] = [condicion['valor']]
+                
+            if condicion['tipo_condicion'] == 'hiddenValues':
+                filter_spec = {
+                    'columnIndex': columna_index,
+                    'filterCriteria': {
+                        'hiddenValues': condicion['valor']
+                    }
+                }
+            else:
+                filter_spec = {
+                    'columnIndex': columna_index,
+                    'filterCriteria': {
+                        'condition': {
+                            'type': condicion['tipo_condicion'],
+                            'values': [{'userEnteredValue': str(valor)} for valor in condicion['valor']]
+                        }
+                    }
+                }
+            filter_specs.append(filter_spec)
+
+        # Construimos el request para añadir o actualizar la vista de filtro
         FilterViewRequest = {
             tipo_request: {
                 'filter': {
                     'title': vistaActual,
                     'range': rango_filtro,
-                    'criteria': criterios
+                    'filterSpecs': filter_specs
                 }
             }
         }
-                
+
         if tipo_request == 'updateFilterView':
-            FilterViewRequest['updateFilterView']['filter']['filterViewId'] = str(idVistaActual)
-            FilterViewRequest['updateFilterView']['fields'] = {'paths': ['criteria', 'title'] }
-       
+            FilterViewRequest[tipo_request]['filter']['filterViewId'] = str(idVistaActual)
+            FilterViewRequest[tipo_request]['fields'] = '*'
+
         #Agrego la request que acabo de crear para esta vista concreta a la lista de requests:
         requestsVistas.append(FilterViewRequest)
-         
+
     #Ahora realmente ejecutamos la solicitud y recuperamos el ID de la vista de filtro generada.
     try:
         body = {'requests': requestsVistas}
@@ -987,16 +1215,19 @@ def gshCrearActualizarVistaFiltro(sheets_service, spreadsheetId, nombreHoja,
     
     #Finalmente, localizamos el ID de las vistas de filtro y lo devolvemos
     respuesta = []
-    for indicePetic, peticion in enumerate(requestsVistas):
-        if 'updateFilterView' in peticion.keys():
-            respuesta.append( peticion['updateFilterView']['filter']['filterViewId'] )
-        
-        elif 'addFilterView' in peticion.keys():
-            respuesta.append(str( FilterViewResponse['replies'][indicePetic][tipo_request]['filter']['filterViewId'] )) 
+    try:
+        for indicePetic, peticion in enumerate(requestsVistas):
+            if 'updateFilterView' in peticion.keys():
+                respuesta.append( peticion['updateFilterView']['filter']['filterViewId'] )
+            
+            elif 'addFilterView' in peticion.keys():
+                respuesta.append(str( FilterViewResponse['replies'][indicePetic][tipo_request]['filter']['filterViewId'] )) 
+    except:
+        print('Vistas de filtros generadas correctamente, pero error al devolver la respuesta')
     
     return respuesta
     
-#%%
+#%% gshCrearHoja
 def gshCrearHoja(sheets_service, spreadsheetId, nombreHoja, nFilas = 100, nCols = 30):
     """
     Esta función crea una nueva hoja en un libro de google.
@@ -1029,7 +1260,7 @@ def gshCrearHoja(sheets_service, spreadsheetId, nombreHoja, nFilas = 100, nCols 
         print('La hoja ya existe, no se realiza ninguna acción')
         return None
 
-#%%
+#%% gshCrearLibro
 def gshCrearLibro(sheets_service, nombreLibro, nombreHoja = None):
     """
     Esta función crea un nuevo libro GSheets y lo deja en "Mi unidad".
@@ -1058,7 +1289,7 @@ def gshCrearLibro(sheets_service, nombreLibro, nombreHoja = None):
     request = sheets_service.spreadsheets().create(body=spreadsheet_body)
     return request.execute()
 
-#%%
+#%% gshDescargarHoja
 def gshDescargarHoja(sheets_service, spreadsheetid, hojaId = None, nombreHoja = None, ficheroDescarga = None, tipo='pdf', sobreescribir = False, vertical = True, size = 'A4'):
     """
     Esta función descargará una sola hoja de una gsheet a un fichero.
@@ -1121,7 +1352,7 @@ def gshDescargarHoja(sheets_service, spreadsheetid, hojaId = None, nombreHoja = 
         descarga.write(content)
     return ficheroDescarga
     
-#%%
+#%% gshDuplicarHoja
 def gshDuplicarHoja(sheets_service, spreadsheetId, nombreHojaOrig, nombreHojaNueva, indiceNuevaHoja = None):
     """
     Esta función duplica una hoja en un libro de google.
@@ -1173,7 +1404,7 @@ def gshDuplicarHoja(sheets_service, spreadsheetId, nombreHojaOrig, nombreHojaNue
     else:
         print('La hoja', nombreHojaNueva, 'ya existe, no se realiza ninguna acción')
 
-#%%
+#%% gshEliminarFilasColumnas
 def gshEliminarFilasColumnas(sheets_service, spreadsheetId, nombreHoja, inicioEliminar, idHoja=None, eliminarFilas=True, numEliminar=1):
     """
     Esta función elimina filas o columnas de una hoja de google sheets
@@ -1293,7 +1524,7 @@ def gshEliminarFilasColumnas(sheets_service, spreadsheetId, nombreHoja, inicioEl
     
     return res
 
-#%%
+#%% gshEliminarFormatoRango
 def gshEliminarFormatoRango (sheets_service, spreadsheetId, nombreHoja, rango, idHoja = None):
     """
     Elimina el formato de un rango de celdas concreto, dejando el formato por defecto.
@@ -1348,7 +1579,7 @@ def gshEliminarFormatoRango (sheets_service, spreadsheetId, nombreHoja, rango, i
     
     return True
 
-#%% 
+#%% gshEliminarRangoProtegido
 def gshEliminarRangoProtegido(sheets_service, spreadsheetId, idRango):
     """
     Elimina uno varios rangos protegidos de un libro.
@@ -1387,7 +1618,7 @@ def gshEliminarRangoProtegido(sheets_service, spreadsheetId, idRango):
     
     return True
     
-#%%
+#%% gshEliminarFormatosCondicionalesHoja
 def gshEliminarFormatosCondicionalesHoja(sheets_service, spreadsheetId, nombreHoja):
     """
     Elimina todas las reglas de formato condicional de una hoja
@@ -1448,7 +1679,7 @@ def gshEliminarFormatosCondicionalesHoja(sheets_service, spreadsheetId, nombreHo
     
     return True
     
-#%%
+#%% gshEliminarValidacionRango
 def gshEliminarValidacionRango(sheets_service, spreadsheetId, nombreHoja, rango, idHoja = None):
     """
     Elimina todas las fórmulas de validación del rango proporcionado.
@@ -1502,8 +1733,171 @@ def gshEliminarValidacionRango(sheets_service, spreadsheetId, nombreHoja, rango,
         return False
     return True
 
-#%%
-def gshEscribirHoja(sheets_service, dataframe, spreadsheetId, nombreHoja, rango = None, replace = True, header=True, formato_fecha='#', modo='RAW'):
+#%% _gshEscribirDatos
+def _gshEscribirDatos(sheets_service, lista, spreadsheetId, rangoA1, modo='RAW', filas_x_trozo = 5000, tecnica='secuencial'):
+    """
+    Esta función es interna al módulo, y está pensada para escribir un gran conjunto de datos en google sheets,
+    troceando los datos y usando el método batchrequest.
+    
+    sheets_service -- Objeto servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
+    lista          -- (list) Lista de dos dimensiones (filas -> columnas) con los datos para escribir
+    rangA1         -- (str) Rango que escribir de la tabla, en formato A1.
+    modo           -- (str) opcional. Indica el modo de escritura. Valores admitidos: 'RAW' o 'USER_ENTERED' (https://developers.google.com/sheets/api/reference/rest/v4/ValueInputOption?hl=es-419)
+                      El modo RAW hace que prevalezca el tipo de dato presente en el dataframe. Ten en cuenta que las fechas se convierten a texto para poder escribirlas.
+                      El modo USER_ENTERED es como si un humano escribiese los valores. En ese caso las fechas se verán como fecha en gsheets, pero todo lo que parezca un número se verá como tal.
+                      Ejemplos con 'RAW' si se porporciona formato_fecha = '%d/%m/%Y' 
+                          Una fecha datetime(1999, 12, 31) se grabará en gsheets como '31/12/1999 (texto)
+                          Un texto '0001' se grabará en gsheets como '0001 (texto)
+                          Un número como 123.45 se grabará en gsheets como 123,45 (número)
+                      Ejemplos con 'USER_ENTERED' si se porporciona formato_fecha = '%d/%m/%Y' :
+                          Una fecha datetime(1999, 12, 31) se grabará en gsheets como 31/12/1999 (fecha)
+                          Un texto '0001' se grabará en gsheets como 1 (número)
+                          Un número como 123.45 se grabará en gsheets como 123,45 (número)
+    filas_x_trozo   -- (int) opcional. Indica el número de filas que subir en cada lote.
+    tecnica         -- (str) opcional. Indica la técnica de escritura. 'secuencial' para realizar múltiples llamadas, 'paralelo' para lanzar una sola.
+                       En ambos casos se dividirá el dataframe en trozos. secuencial es más segura para evitar timeouts, pero puede ocasionar un exceso de llamadas
+                       paralelo asegura escritura completa de la tabla, pero puede dar timeout.
+    """
+    
+    if '!' in rangoA1:
+        nombreHoja = rangoA1[:rangoA1.index('!')]
+    else:
+        nombreHoja = rangoA1
+    rangoA1 = gshTraducirRango_v2(sheets_service, spreadsheetId, rangoA1)
+    
+    primera_fila    = rangoA1['startRowIndex'] + 1
+    primera_columna = _column_letter(rangoA1['startColumnIndex']+1)
+    if 'endRowIndex' in rangoA1:
+        ultima_fila = rangoA1['endRowIndex']
+    else:
+        ultima_fila = ''
+    if 'endColumnIndex' in rangoA1:
+        ultima_columna = _column_letter(rangoA1['endColumnIndex'])
+    else:
+        ultima_columna  = ''
+    
+    #Analizamos si hay que redimensionar la hoja
+    datos_hojas = sheets_service.spreadsheets().get(spreadsheetId=spreadsheetId,fields="sheets/properties/gridProperties,sheets/properties/title,sheets/properties/sheetId").execute()
+    for hoja in datos_hojas['sheets']:
+        if hoja['properties']['title'] == nombreHoja.replace("'",''):
+            filas_hoja    = hoja['properties']['gridProperties']['rowCount']
+            columnas_hoja = hoja['properties']['gridProperties']['columnCount']
+            idHoja        = hoja['properties']['sheetId']
+    
+    if ultima_fila == '':
+        filas_necesarias = len(lista) + primera_fila-1
+    else:
+        filas_necesarias = max(ultima_fila, len(lista) + primera_fila-1)
+
+    if ultima_columna == '':
+        columnas_necesarias = len(lista[0]) + rangoA1['startColumnIndex']
+    else:
+        columnas_necesarias = max(rangoA1['endColumnIndex'], len(lista[0]) + rangoA1['startColumnIndex'])
+        
+    if filas_necesarias > filas_hoja or columnas_necesarias > columnas_hoja:
+        request = {"requests": []}
+        if filas_necesarias > filas_hoja:
+            request['requests'].append(
+                {
+                    "appendDimension": {
+                        "sheetId": idHoja,
+                        "dimension": "ROWS",
+                        "length": filas_necesarias-filas_hoja
+                    }
+                }
+            )
+        if columnas_necesarias > columnas_hoja:
+            request['requests'].append(
+                {
+                    "appendDimension": {
+                        "sheetId": idHoja,
+                        "dimension": "COLUMNS",
+                        "length": columnas_necesarias-columnas_hoja
+                    }
+                }
+            )
+        sheets_service.spreadsheets().batchUpdate(spreadsheetId=spreadsheetId, body=request).execute()
+    
+    #Después de comprobar el dimensionamiento, escribimos
+    
+    #Dejamos programadas dos técnicas de escritura:
+    #La técnica paralela lanzará un único batchupdate, dividiendo el dataframe en trozos
+    #La téncica secuencial divide el dataframe en trozos, y va escribiendo uno a uno.
+    if tecnica == 'paralelo':
+        request = {
+            'data' : [],
+            'valueInputOption' : modo
+        }
+        
+        i = 0
+        while (i<len(lista)):
+            if ultima_fila != '' or ultima_columna != '':
+                if ultima_fila != '':
+                    ultima_fila_rango = min(ultima_fila, primera_fila+i+filas_x_trozo-1)
+                else:
+                    ultima_fila_rango = ''
+                finrango = f':{ultima_columna}{ultima_fila_rango}'
+            else:
+                finrango = ''
+            trozo = {
+                'majorDimension' : 'ROWS',
+                'range'          : f"{nombreHoja}!{primera_columna}{primera_fila+i}{finrango}",
+                'values'         : lista[i:i+filas_x_trozo],
+            }
+            request['data'].append(trozo)
+            i += filas_x_trozo
+        
+        result = sheets_service.spreadsheets().values().batchUpdate(
+            spreadsheetId = spreadsheetId, 
+            body = request
+        ).execute()
+        
+    elif tecnica == 'secuencial':
+        i = 0
+        while (i<len(lista)):
+            print(f'Subiendo filas de la {i+1} a la {min(len(lista), i+filas_x_trozo)}')
+            request = {
+                'data' : [],
+                'valueInputOption' : modo
+            }
+            
+            if ultima_fila != '' or ultima_columna != '':
+                if ultima_fila != '':
+                    ultima_fila_rango = min(ultima_fila, primera_fila+i+filas_x_trozo-1)
+                else:
+                    ultima_fila_rango = ''
+                finrango = f':{ultima_columna}{ultima_fila_rango}'
+            else:
+                finrango = ''
+            trozo = {
+                'majorDimension' : 'ROWS',
+                'range'          : f"{nombreHoja}!{primera_columna}{primera_fila+i}{finrango}",
+                'values'         : lista[i:i+filas_x_trozo],
+            }
+            request['data'].append(trozo)
+            i += filas_x_trozo
+        
+            result = sheets_service.spreadsheets().values().batchUpdate(
+                spreadsheetId = spreadsheetId, 
+                body = request
+            ).execute()
+        
+    return result
+#%% gshEscribirHoja
+def gshEscribirHoja(
+    sheets_service, 
+    dataframe      : pd.DataFrame, 
+    spreadsheetId  : str, 
+    nombreHoja     : str, 
+    rango          : str                    = None, 
+    replace        : bool                   = True, 
+    header         : bool                   = True, 
+    formato_fecha  : str                    = '#', 
+    modo           : Literal["RAW", "USER_ENTERED"] = 'RAW', 
+    conversion_exhaustiva_fechas : bool     = False, 
+    filas_x_trozo  : int                    = 5000,
+    ajustar_hoja   : bool                   = False,
+):
     """
     Esta función escribe una dataframe en una hoja de google. Si la hoja que se ha pasado para escribir no existe, la crea. 
     
@@ -1528,71 +1922,89 @@ def gshEscribirHoja(sheets_service, dataframe, spreadsheetId, nombreHoja, rango 
                           Una fecha datetime(1999, 12, 31) se grabará en gsheets como 31/12/1999 (fecha)
                           Un texto '0001' se grabará en gsheets como 1 (número)
                           Un número como 123.45 se grabará en gsheets como 123,45 (número)
+    conversion_exhaustiva_fechas -- (bool:False) opcional. Indica si debe revisar celda a celda del dataframe para convertir fechas antes de subir a drive.
+    filas_x_trozo   -- (int) opcional. Indica el número de filas que subir en cada lote.
+    ajustar_hoja    -- (bool) opcional. Indica si debe ajustar el número de filas y columnas al tamaño del dataframe.
 """
     import re
     from datetime import datetime
     
     sheet = sheets_service.spreadsheets()
     #Comprobamos si la hoja existe. En caso contrario, se crea:
+    idHoja = None
     if nombreHoja not in gshObtenerNombreHojas(sheets_service, spreadsheetId):
-        gshCrearHoja(sheets_service, spreadsheetId=spreadsheetId, nombreHoja=nombreHoja)
+        respuesta = gshCrearHoja(sheets_service, spreadsheetId=spreadsheetId, nombreHoja=nombreHoja)
+        try:
+            idHoja = respuesta['replies'][0]['addsheet']['properties']['sheetId']
+        except:
+            pass
     #Por si viene rango, envolvemos el nombre de la hoja entre comillas
-    nombreHoja = "'" + nombreHoja + "'"
+    rangoA1 = "'" + nombreHoja + "'"
+
+    fila_inicio = 0
+    col_inicio  = 0
     if not rango is None:
-        nombreHoja = nombreHoja + "!" + rango
+        rangoA1 = rangoA1 + "!" + rango
+        rango_json = gshTraducirRango(rango,'')
+        if 'startRowIndex'    in rango_json: fila_inicio = rango_json['startRowIndex']
+        if 'startColumnIndex' in rango_json: col_inicio  = rango_json['startColumnIndex']
+
+    if ajustar_hoja:
+        gshAjustarDimensionHoja(
+            sheets_service = sheets_service,
+            spreadsheetId  = spreadsheetId,
+            nombreHoja     = nombreHoja,
+            idHoja         = idHoja,
+            numFilas       = fila_inicio + len(dataframe) + (1 if header else 0),
+            numCols        = col_inicio + len(dataframe.columns),
+        )
     
     if replace:
         #Si el rango es de una sola celda y el dataframe trae más de un valor se limpia la hoja entera desde esa celda hasta el final
         if rango is not None and len(rango.split(':')) == 1 and (dataframe.shape[0]*dataframe.shape[1]) > 1 :
-            fila = re.split('(\d+)',rango)[1]
-            hoja_borrar = nombreHoja + ':'+ str(fila)
-            result = sheet.values().clear(spreadsheetId = spreadsheetId,
-                                          range = hoja_borrar).execute()
+            fila = re.split(r'(\d+)', rango)[1]
+            hoja_borrar = rangoA1 + ':'+ str(fila)
+            result = sheet.values().clear(spreadsheetId = spreadsheetId, range = hoja_borrar).execute()
             #del resultado capturamos cuál es la última columna y borramos por columnas
             rango_borrado = result['clearedRange']
-            if len(rango_borrado.split(':'))>1:
-                columna = re.split( '(\d+)',  rango_borrado.split(':')[1]  )[0]
-                hoja_borrar = nombreHoja + ':'+ str(columna)
-                result = sheet.values().clear(spreadsheetId = spreadsheetId,
-                                              range = hoja_borrar).execute()
+            if len(rango_borrado.split(':')) > 1:
+                columna = re.split(r'(\d+)', rango_borrado.split(':')[1])[0]
+                hoja_borrar = rangoA1 + ':'+ str(columna)
+                result = sheet.values().clear(spreadsheetId = spreadsheetId, range = hoja_borrar).execute()
             
             
         #Si el rango comprende más de una celda borramos sólo ese rango
         else:
-            result = sheet.values().clear(spreadsheetId = spreadsheetId,
-                                          range = nombreHoja).execute()
+            result = sheet.values().clear(spreadsheetId = spreadsheetId, range = rangoA1).execute()
 
-    copia = dataframe.copy()
-    #2021-12-14: Puede haber varias columnas con el mismo nombre. En ese caso, el dtype fallaría porque no devolvería una serie, sino un df. Corregimos usando iloc.
-    origen = datetime(1899, 12, 30)
-    for col in copia.columns:
-        if copia[col].dtype == 'datetime64[ns]':
-            if formato_fecha == '#':
-                copia[col] = copia[col].apply(lambda x: (x-origen).total_seconds()/86400)
-            else:
-                copia[col] = copia[col].dt.strftime(formato_fecha)
-    copia = copia.fillna('') #Cambio 2021-02-01. Hacer esto antes del cambio de formato implica que las columnas de tiempo, si tienen nulos, pasan a ser objects, por lo que no las convierte a texto, y la subida petaba.
-    #2021-02-01: Ahora también habría que reemplazar los NaT que hubiesen poder haber quedado kaputt:
-    copia = copia.replace('NaT','')
+    lista = _dataframe_a_lista(dataframe=dataframe, header=header, formato_fecha=formato_fecha, conversion_exhaustiva_fechas=conversion_exhaustiva_fechas)
     
-    lista = copia.values.tolist()
-    
-    if header:
-        lista.insert(0, dataframe.columns.tolist())
-        
-    result = sheets_service.spreadsheets().values().update(spreadsheetId = spreadsheetId,
-                                                    range = nombreHoja,
-                                                    body = {
-                                                        'majorDimension': 'ROWS',
-                                                        'values': lista
-                                                    },
-                                                    valueInputOption=modo
-                                                   ).execute()
+    if len(lista) > filas_x_trozo:
+        result = _gshEscribirDatos(
+            sheets_service = sheets_service, 
+            lista          = lista, 
+            spreadsheetId  = spreadsheetId, 
+            rangoA1        = rangoA1,
+            modo           = modo, 
+            filas_x_trozo  = filas_x_trozo,
+        )
+
+    else:
+        body = {
+            'majorDimension': 'ROWS',
+            'values': lista
+        }
+        result = sheets_service.spreadsheets().values().update(
+            spreadsheetId    = spreadsheetId,
+            range            = rangoA1,
+            body             = body,
+            valueInputOption = modo,
+        ).execute()
 
     return result
 
-#%%
-def gshEscribirRango(sheets_service, lista, spreadsheetId, nombreHoja, rango, fillna = None, header=False, formato_fecha='#', modo='RAW'):
+#%% gshEscribirRango
+def gshEscribirRango(sheets_service, lista, spreadsheetId, nombreHoja, rango, fillna = None, header=False, formato_fecha='#', modo='RAW', conversion_exhaustiva_fechas=False, filas_x_trozo=5000):
     """
     Esta función escribe una lista de valores en una hoja de google.
 
@@ -1634,6 +2046,8 @@ def gshEscribirRango(sheets_service, lista, spreadsheetId, nombreHoja, rango, fi
                           Una fecha datetime(1999, 12, 31) se grabará en gsheets como 31/12/1999 (fecha)
                           Un texto '0001' se grabará en gsheets como 1 (número)
                           Un número como 123.45 se grabará en gsheets como 123,45 (número)
+    conversion_exhaustiva_fechas -- (bool:False) opcional. Indica si debe revisar celda a celda del dataframe para convertir fechas antes de subir a drive.
+    filas_x_trozo   -- (int) opcional. Indica el número de filas que subir en cada lote.
 
     Returns
     -------
@@ -1644,8 +2058,7 @@ def gshEscribirRango(sheets_service, lista, spreadsheetId, nombreHoja, rango, fi
     import pandas
     from datetime import datetime
     origen = datetime(1899, 12, 30)
-    
-    sheet = sheets_service.spreadsheets()
+
     #Comprobamos si la hoja existe. En caso contrario, se crea:
     if nombreHoja not in gshObtenerNombreHojas(sheets_service, spreadsheetId):
         gshCrearHoja(sheets_service, spreadsheetId=spreadsheetId, nombreHoja=nombreHoja)
@@ -1658,11 +2071,19 @@ def gshEscribirRango(sheets_service, lista, spreadsheetId, nombreHoja, rango, fi
     if type(copia) == pandas.core.frame.DataFrame:
         #Pasamos las columnas de fecha a días de sheets
         for col in copia.columns:
-            if copia[col].dtype == 'datetime64[ns]':
-                if formato_fecha == '#':
-                    copia[col] = copia[col].apply(lambda x: (x-origen).total_seconds()/86400)
-                else:
-                    copia[col] = copia[col].dt.strftime(formato_fecha)
+            if not conversion_exhaustiva_fechas:
+                if copia[col].dtype == 'datetime64[ns]':
+                    if formato_fecha == '#':
+                        copia[col] = copia[col].apply(lambda x: (x-origen).total_seconds()/86400)
+                    else:
+                        copia[col] = copia[col].dt.strftime(formato_fecha)
+            else:
+                for fila, celda in copia[col].items():
+                    if isinstance(celda, datetime):
+                        if formato_fecha == '#':
+                            copia.loc[fila, col] = (celda-origen).total_seconds()/86400
+                        else:
+                            copia.loc[fila, col] = celda.strftime(formato_fecha)
 
         cabecera = [[nom_columna for nom_columna in copia.columns]] 
         copia    = [  [None if pd.isna(valor) else valor for valor in fila]   for fila in copia.values.tolist() ]
@@ -1683,20 +2104,30 @@ def gshEscribirRango(sheets_service, lista, spreadsheetId, nombreHoja, rango, fi
         if type(fillna) == str:
             lista = [[fillna if v is None else v for v in l] for l in copia]
     
-        
-    result = sheets_service.spreadsheets().values().update(
-        spreadsheetId = spreadsheetId,
-        range = nombreHoja,
-        body = {
-            'majorDimension': 'ROWS',
-            'values': copia
-        },
-        valueInputOption=modo
-    ).execute()
+    
+    if len(copia) > filas_x_trozo:
+        result = _gshEscribirDatos(
+            sheets_service = sheets_service, 
+            lista          = copia, 
+            spreadsheetId  = spreadsheetId, 
+            rangoA1        = nombreHoja,
+            modo           = modo, 
+            filas_x_trozo  = filas_x_trozo,
+        )
+    else:
+        result = sheets_service.spreadsheets().values().update(
+            spreadsheetId = spreadsheetId,
+            range = nombreHoja,
+            body = {
+                'majorDimension': 'ROWS',
+                'values': copia
+            },
+            valueInputOption=modo
+        ).execute()
 
     return result
 
-#%%
+#%% gshFormatearHoja
 def gshFormatearHoja(sheets_service, spreadsheetId, nombreHoja, rangoCabecera = '1:1'):
     """
     Da formato corporativo básico a una hoja de una spreadsheet. Pone la cabecera con fondo azul, letras
@@ -1793,7 +2224,7 @@ def gshFormatearHoja(sheets_service, spreadsheetId, nombreHoja, rangoCabecera = 
     
     return True
 
-#%%
+#%% gshFormatearRango
 def gshFormatearRango(
     sheets_service, 
     spreadsheetId, 
@@ -1965,7 +2396,7 @@ def gshFormatearRango(
     
     return True
 
-#%%
+#%% gshFormatoCondicionalRango
 def gshFormatoCondicionalRango(sheets_service, spreadsheetId, nombreHoja, reglas_formatos, idHoja=None ):
     """
     Genera las reglas de formato condicional en un conjunto de rangos
@@ -2109,7 +2540,7 @@ def gshFormatoCondicionalRango(sheets_service, spreadsheetId, nombreHoja, reglas
     
     return True
 
-#%%
+#%% gshInsertarFilasColumnas
 def gshInsertarFilasColumnas(sheets_service, spreadsheetId, nombreHoja, idHoja=None, insertarFilas=True, despuesDe=None, numInsertar=1, copiarFormatoAnterior = True):
     """
     Esta función inserta filas o columnas a una hoja de google sheets
@@ -2260,7 +2691,7 @@ def gshInsertarFilasColumnas(sheets_service, spreadsheetId, nombreHoja, idHoja=N
     
     return res
 
-#%%
+#%% gshLeerHoja
 def gshLeerHoja(sheets_service, spreadsheetId, nombreHoja, rango = None, header = True, formato_valores = 'UNFORMATTED_VALUE', formato_fechas = 'FORMATTED_STRING'):
     """
     Esta función lee el contenido de un rango de una hoja de un libro Google. Basada en el servicio: https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets.values/get
@@ -2334,7 +2765,35 @@ def gshLeerHoja(sheets_service, spreadsheetId, nombreHoja, rango = None, header 
         
         return df
 
-#%%
+#%% gshLeerPropiedadesLibro
+def gshLeerPropiedadesLibro(sheets_service, spreadsheet_id:str, fields:str="properties,sheets.properties") -> dict:
+    """
+    Obtiene las propiedades de un libro de Google Sheets.
+
+    Args:
+        sheets_service: (googleapiclient.discovery.Resource) Objeto autenticado del servicio Google Sheets.
+        spreadsheet_id: (str) ID del libro de Google Sheets.
+        fields: (str) Campos específicos que se desean recuperar. 
+                Por defecto, incluye "properties" (propiedades del libro) y "sheets.properties" (propiedades de las hojas).
+                Consulta todos los campos disponibles en la API aquí:
+                https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets#Spreadsheet
+
+    Returns:
+        Un diccionario con las propiedades solicitadas del libro y sus hojas, según los campos especificados.
+    """
+    try:
+        # Llamada a la API para obtener las propiedades del libro
+        response = sheets_service.spreadsheets().get(
+            spreadsheetId=spreadsheet_id,
+            fields=fields
+        ).execute()
+
+        return response  # Devuelve la respuesta con los campos solicitados
+
+    except Exception as e:
+        print(f"Error al obtener propiedades del libro: {e}")
+        return None
+#%% gshLimpiarHoja
 def gshLimpiarHoja(sheets_service, spreadsheetId, nombreHoja):
     """
     Esta función limpia todo el contenido de una hoja, pero no la elimina. 
@@ -2366,7 +2825,7 @@ def gshLimpiarHoja(sheets_service, spreadsheetId, nombreHoja):
 
     return result
 
-#%%
+#%% gshLimpiarRango
 def gshLimpiarRango(sheets_service, spreadsheetId, nombreHoja, rango=None):
     """
     Esta función limpia el contenido de un rango dentro de una hoja
@@ -2405,7 +2864,7 @@ def gshLimpiarRango(sheets_service, spreadsheetId, nombreHoja, rango=None):
 
     return result
 
-#%%
+#%% gshListarOpcionesFiltro
 def gshListarOpcionesFiltro():
     opciones_condicion = ['CONDITION_TYPE_UNSPECIFIED', 
                           'NUMBER_GREATER', 'NUMBER_GREATER_THAN_EQ', 'NUMBER_LESS', 'NUMBER_LESS_THAN_EQ', 'NUMBER_EQ', 'NUMBER_NOT_EQ', 'NUMBER_BETWEEN', 'NUMBER_NOT_BETWEEN',
@@ -2417,7 +2876,7 @@ def gshListarOpcionesFiltro():
                           ]
     return opciones_condicion
        
-#%%
+#%% gshObtenerIDHoja
 def gshObtenerIDHoja(sheets_service, spreadsheetId, nombreHoja):
     """
     Devuelve el ID de una hoja concreta dentro de una spreadsheet.
@@ -2438,7 +2897,7 @@ def gshObtenerIDHoja(sheets_service, spreadsheetId, nombreHoja):
     """   
     
     #Localizamos la hoja pedida y capturamos su ID y el número de columnas
-    sheet_metadata = sheets_service.spreadsheets().get(spreadsheetId=spreadsheetId).execute()
+    sheet_metadata = sheets_service.spreadsheets().get(spreadsheetId=spreadsheetId, fields='sheets.properties(sheetId,title)').execute()
     sheets = sheet_metadata.get('sheets', '')
     
     sheetId = None
@@ -2452,7 +2911,7 @@ def gshObtenerIDHoja(sheets_service, spreadsheetId, nombreHoja):
         
     return sheetId
 
-#%%
+#%% gshObtenerNombreIdHojas
 def gshObtenerNombreIdHojas(sheets_service, spreadsheetId):
     """
     Esta función devuelve un diccionario con claves los nombres de hojas que tiene un libro de Google y valor sus IDs.
@@ -2478,7 +2937,7 @@ def gshObtenerNombreIdHojas(sheets_service, spreadsheetId):
         sheetNamesIDs[ sheet['properties']['title'] ] = sheet['properties']['sheetId']
     return sheetNamesIDs
 
-#%%
+#%% gshObtenerNombreHojas
 def gshObtenerNombreHojas(sheets_service, spreadsheetId):
     """
     Esta función devuelve los nombres de hojas que tiene un libro de Google.
@@ -2497,7 +2956,7 @@ def gshObtenerNombreHojas(sheets_service, spreadsheetId):
         sheetnames.append(sheet['properties']['title'])
     return sheetnames
 
-#%%
+#%% gshObtenerRangosProtegidos
 def gshObtenerRangosProtegidos(sheets_service, spreadsheetId):
     """
     Devuelve todos los rangos protegidos de un libro. Devuelve un diccionario donde las claves son
@@ -2551,8 +3010,8 @@ def gshObtenerRangosProtegidos(sheets_service, spreadsheetId):
                 
     return rangos_protegidos           
                 
-#%%    
-def gshObtenerVistasFiltro(sheets_service, spreadsheetId, nombreHoja):
+#%% gshObtenerVistasFiltro
+def gshObtenerVistasFiltro(sheets_service, spreadsheetId, nombreHoja, soloId=True):
     """
     Esta función devuelve un diccionario con las vistas de filtro que hay en una hoja de un libro google.
     La clave del diccionario es el NOMBRE de la vista de filtro. El contenido es el id de la vista de filtro.
@@ -2563,10 +3022,11 @@ def gshObtenerVistasFiltro(sheets_service, spreadsheetId, nombreHoja):
     - sheets_service = Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
     - spreadsheetId = str, Identificador del libro en Google Drive.
     - nombreHoja = str, Nombre de la hoja en la que se desea escribir dentro del libro.
+    - soloId = bool (True) Indica si debe devolver solamente el id del filtro, o el filtro completo
     """
     
     #Localizamos las propiedades de todas las hojas
-    sheet_metadata = sheets_service.spreadsheets().get(spreadsheetId=spreadsheetId).execute()
+    sheet_metadata = sheets_service.spreadsheets().get(spreadsheetId=spreadsheetId, fields='sheets.properties(title),sheets.filterViews').execute()
     sheets = sheet_metadata.get('sheets', '')
     sheet_names = [sheet['properties']['title'] for sheet in sheets]
     
@@ -2576,22 +3036,17 @@ def gshObtenerVistasFiltro(sheets_service, spreadsheetId, nombreHoja):
     
     #Comprobamos en qué posición está la hoja solicitada. No va a fallar porque en el if anterior aseguramos que está.
     indice_hoja = sheet_names.index(nombreHoja)
-    
-        
-    #Si esa hoja en particular no tiene vistas de filtro, devolvemos diccionario vacío.
-    if 'filterViews' not in sheet_metadata['sheets'][indice_hoja].keys():
-        return dict()
-    
-    vistas_filtro = sheet_metadata['sheets'][indice_hoja]['filterViews']
-    
-    #Pasamos las vistas a un diccionario con clave el nombre de la vista y dato el id.
-    result = dict()
-    for filtro in vistas_filtro:
-        result[filtro['title']] = filtro['filterViewId']
 
-    return result
+    if 'filterViews' in sheets[indice_hoja]:
+        if soloId:
+            vistasFiltro = {vista['title']:vista['filterViewId'] for vista in sheets[indice_hoja]['filterViews']}
+        else:
+            vistasFiltro = {vista['title']:vista for vista in sheets[indice_hoja]['filterViews']}
+    else:
+        vistasFiltro = dict()
+    return vistasFiltro 
 
-#%%    
+#%% gshOrdenarHojas
 def gshOrdenarHojas(sheets_service, spreadsheetId, nombresHojasOrdenadas):
     """
     Ordena las hojas dentro de una spreadsheet. Recibe una lista con los nombres de las 
@@ -2659,7 +3114,7 @@ def gshOrdenarHojas(sheets_service, spreadsheetId, nombresHojasOrdenadas):
     
     return res
 
-#%%
+#%% gshProtegerRango
 def gshProtegerRango(sheets_service, spreadsheetId, nombreHoja, usuariosEdicion, rango=None, idRango=None, nombreRango=None, gruposEdicion = None):
     """
     Esta función protege uno o varios rangos de un libro. Si no se proporciona el ID del rango protegido, crea un nuevo rango.
@@ -2812,7 +3267,7 @@ def gshProtegerRango(sheets_service, spreadsheetId, nombreHoja, usuariosEdicion,
             
     return salida
     
-#%%
+#%% gshRenombrarLibro
 def gshRenombrarLibro(sheets_service, spreadsheetId, nuevo_nombre):
     """
     Parametros
@@ -2846,7 +3301,7 @@ def gshRenombrarLibro(sheets_service, spreadsheetId, nuevo_nombre):
     
     return resultado
 
-#%%
+#%% gshTraducirColor
 def gshTraducirColor(color) :
     """
     Recibe un color RGB y lo traduce a su representación JSON
@@ -2881,7 +3336,7 @@ def gshTraducirColor(color) :
        
     return resul_color
 
-#%%
+#%% gshTraducirRango
 def gshTraducirRango(rangoLetras, sheetId):
     """
     Recibe un rango con el formato habitual de una sheet (Ejemplo: 'A25:J48') y lo traduce a un
@@ -2905,7 +3360,7 @@ def gshTraducirRango(rangoLetras, sheetId):
     
     
     if len(partesRango)== 1: #es sólo 1 celda
-        celda = re.split(pattern='(\d+)',string=rangoLetras)
+        celda = re.split(pattern=r'(\d+)',string=rangoLetras)
         if len(celda) != 3 or celda[2]!= '':
             print("Celda con formato incorrecto")
             return None
@@ -2930,7 +3385,7 @@ def gshTraducirRango(rangoLetras, sheetId):
     #Para cada parte vamos a calcular su columna y fila de inicio o fin respectivamente
      
     #PARTE1    
-    celda_ini = re.split(pattern='(\d+)',string=partesRango[0])
+    celda_ini = re.split(pattern=r'(\d+)',string=partesRango[0])
     
     #si sólo viene la columna
     if len(celda_ini) == 1 and celda_ini[0].isalpha() : 
@@ -2960,7 +3415,7 @@ def gshTraducirRango(rangoLetras, sheetId):
     
     
     #PARTE2
-    celda_fin = re.split(pattern='(\d+)',string=partesRango[1])
+    celda_fin = re.split(pattern=r'(\d+)',string=partesRango[1])
     
     #si sólo viene la columna
     if len(celda_fin) == 1 and celda_fin[0].isalpha() : 
@@ -2990,7 +3445,149 @@ def gshTraducirRango(rangoLetras, sheetId):
       
     return rango
     
-#%%
+#%% gshTraducirRango_v2
+def _column_index(col_str):
+    # Convertir la letra de la columna a un índice basado en 1
+    col_index = 0
+    for c in col_str:
+        if c.isalpha():
+            col_index = col_index * 26 + (ord(c.upper()) - ord('A'))+1
+    return col_index
+
+def _column_letter(col_index):
+    """
+    Convierte un índice de columna en su representación de letra.
+    """
+    result = ""
+    while col_index > 0:
+        col_index, remainder = divmod(col_index - 1, 26)
+        result = chr(65 + remainder) + result
+    return result
+
+def gshTraducirRango_v2(sheets_service, spreadsheetId:str, rangoA1:str):
+    """
+    Función que devuelve un objeto con coordenadas para proporcionar a una request
+    de gsheets que exija coordenadas en formato diccionario.
+
+    Parameters
+    ----------
+    sheets_service : googleapiclient.discovery.Resource 
+        Se obtiene con el método gapps.connect
+    spreadsheetId : str
+        Identificador de la hoja en la que se busca el rango.
+    rangoA1 : str
+        Rango en notación A1. Ejemplos válidos:
+            - A:A
+            - A4
+            - A3:B5
+            - A7:F
+            - 3:10
+            - Hoja!A:B
+            - Hoja!3:10
+            - 'Hoja 1'!A:B
+
+    Raises
+    ------
+    Exception
+        Error si la coordenada está mal formada.
+
+    Returns
+    -------
+    dict
+        Diccionario con las claves:
+            - 'startRowIndex'    : fila de inicio del rango (basada en 0)
+            - 'startColumnIndex' : índice de columna de inicio del rango (basada en 0)
+            - 'endRowIndex'      : (si se informa) primera fila fuera de rango
+            - 'endColumnIndex'   : (si se informa) índice de primera columna fuera de rango
+            - 'sheetId'          : identificador de la hoja de trabajo (gid). Si no existe, llega como None
+        Ejemplo:
+            'Hoja1!A3:B' devuelve:
+                {
+                    'sheetId'          : 0,
+                    'startRowIndex'    : 3,
+                    'startColumnIndex' : 0,
+                    'endColumnIndex'   : 2,
+                }
+
+    """
+    hoja = None
+    
+    def extraerRango(rango):
+        import re
+        try:
+            groups = list(re.match(r'(?:([a-zA-Z]*)(\d*))(?::([a-zA-Z]*)(\d*))?$', rango).groups())
+        except:
+            raise Exception('Coordenada mal formada')
+        #A:C3 equivale a A3:C
+        #3:C es error
+        if groups[0] == '' and groups[1] != '' and groups[2] != '' and groups[3] == '':
+            raise Exception('Coordenada mal formada')
+        if groups[0] != '' and groups[1] == '' and groups[2] == '' and groups[3] != '':
+            raise Exception('Coordenada mal formada')
+        if groups[0] == '' and groups[2] != '':
+            groups[0], groups[2] = groups[2], groups[0]
+        if groups[1] == '' and groups[3] != '':
+            groups[1], groups[3] = groups[3], groups[1]
+        
+        if groups[0] == '' and groups[1] == '':
+            raise Exception('Coordenada mal formada')
+        groups = [x if x != '' else None for x in groups]
+        if groups[1] is not None:
+            groups[1] = int(groups[1])
+        if groups[3] is not None:
+            groups[3] = int(groups[3])
+        if groups[1] is not None and groups[3] is not None and groups[1] > groups[3]:
+            groups[1], groups[3] = groups[3], groups[1]
+        if groups[1] is not None:
+            groups[1] -= 1
+        
+        if groups[0] is not None:
+            groups[0] = _column_index(groups[0])
+        if groups[2] is not None:
+            groups[2] = _column_index(groups[2])
+        if groups[0] is not None and groups[2] is not None and groups[0] > groups[2]:
+            groups[0], groups[2] = groups[2], groups[0]
+        if groups[0] is not None:
+            groups[0] -= 1
+        if sum([1 for x in groups if x is not None])<2:
+            raise Exception('Coordenada mal formada')
+        if groups[0] is None:
+            groups[0] = 0
+        if groups[1] is None:
+            groups[1] = 0
+        
+        rango = {
+            'startColumnIndex' : groups[0],
+            'startRowIndex'    : groups[1],
+            'endColumnIndex'   : groups[2],
+            'endRowIndex'      : groups[3],
+        }
+        rango = {c:v for c,v in rango.items() if v is not None}
+        return rango
+    
+    if '!' in rangoA1:
+        rango = rangoA1.split('!')
+        if len(rango) == 2:
+            #Hoja y coordenada
+            hoja, coord = rango
+            rango = extraerRango(coord)
+            rango['sheetId'] = gshObtenerIDHoja(sheets_service=sheets_service, spreadsheetId=spreadsheetId, nombreHoja=hoja.replace("'", ""))
+            return rango
+        else:
+            #Coordenada mal formada
+            raise Exception("Coordenada mal formada")
+    else:
+        #Puede ser solo la hoja o solo un rango
+        try:
+            idsheet = gshObtenerIDHoja(sheets_service=sheets_service, spreadsheetId=spreadsheetId, nombreHoja=rangoA1.replace("'",""))
+            if idsheet is None:
+                return extraerRango(rangoA1)
+            else:
+                return {'sheetId':idsheet, 'startRowIndex':0, 'startColumnIndex':0}
+        except:
+            return extraerRango(rangoA1)
+            
+#%% gshTraducirRangoInverso
 def gshTraducirRangoInverso (rangoJSON):
     """
     Recibe una representación JSON de un rango y devuelve el rango con el formato de una sheet (Ejemplo: 'A25:J48')
@@ -3039,7 +3636,7 @@ def gshTraducirRangoInverso (rangoJSON):
     
     return  rango_letras_ini + ':' + rango_letras_fin
 
-#%%
+#%% gshValidacionDesplegableRango
 def gshValidacionDesplegableRango(sheets_service, spreadsheetId, nombreHoja, rango, valoresValidacion, idHoja = None):
     """
     Hace que un rango sólo pueda tener los valores especificados en valoresValidacion y se
@@ -3070,7 +3667,7 @@ def gshValidacionDesplegableRango(sheets_service, spreadsheetId, nombreHoja, ran
         idHoja = gshObtenerIDHoja(sheets_service, spreadsheetId, nombreHoja) 
         
     if idHoja is None:
-        print("No se generar la validación en la hoja")
+        print("No se puede generar la validación en la hoja")
         return False
     
     rango_req = gshTraducirRango(rangoLetras=rango, sheetId=idHoja)
@@ -3115,9 +3712,156 @@ def gshValidacionDesplegableRango(sheets_service, spreadsheetId, nombreHoja, ran
     return True
 
 
+
+
+
+def gshAgruparRango(sheets_service, spreadsheetId, nombreHoja, rango, idHoja = None, dejarAbierto=True, profundidad=1, borrarAgrupacion = False):
+    """
+    Agrupa un rango de filas o de columnas. 
+    
+    Parameters
+    ----------
+    sheets_service : service object
+        Servicio abierto con googlesheets, que debe haber devuelto la función connect previamente.
+    spreadsheetId : str
+        Identificador del libro en Google Drive.
+    nombreHoja : str
+        Nombre de la hoja en la que se desea escribir dentro del libro.
+    rango : str 
+        Rango de filas o columnas a agrupar con notación de la sheet. 
+        Se pueden pasar varios rangos separados por ';'
+        Ejemplos: FILAS: '6:12' , COLUMNAS: 'J:R'      FILAS Y COLS: 'C:F;V:Z;AC:AK;12:17;25:30'                                                                               
+        IMPORTANTE: NO deben proporcionarse RANGOS DE CELDAS de tipo 'A3:J27'<--NO!
+    idHoja : str, optional
+        El id de la hoja que se quiere utilizar. Si se pasa se ignora el nombre de la hoja. 
+        The default is None.
+    dejarAbierto: bool, optional
+        True si se quiere que se genere una agrupación pero se mantenga visibles todas las filas
+        False si se quiere que además cierre y oculte las filas agrupadas
+        Por defecto True (deja abiertas las filas)
+    profundidad: int, optional
+        Profundidad del grupo. Representa cuántos grupos tienen un rango que 
+        abarca completamente el rango del grupo actual. Sólo se usa si NO se quiere DEJAR ABIERTO.
+        Default is 1.
+    borrarAgrupacion: bool, optional
+        Si unas filas/columnas ya estaban agrupadas se puede borrar la agrupación pasando borrarAgrupacion = True.
+        Por defecto no borra la agrupación.
+        Default is False
+    
+    Returns
+    -------
+    Boolean
+        True si todo ha ido correctamente, False en caso de error.
+    """  
+    
+    if idHoja is None:
+        idHoja = gshObtenerIDHoja(sheets_service, spreadsheetId, nombreHoja) 
+        
+    if idHoja is None:
+        print("No se puede generar la validación en la hoja")
+        return False
+    
+    if type(rango)!= str:
+        print("No se ha proporcionado un rango adecuado")
+        return False
+    
+    #Determinamos si lo que se quiere es agrupar o des-agrupar
+    tipo_request = "addDimensionGroup"
+    
+    if borrarAgrupacion:
+        tipo_request = "deleteDimensionGroup"
+        
+        
+    #Preparamos las requests y vamos agregando para cada rango
+    lista_requests = []
+    lista_requests_cerrar = []
+    
+    
+    lista_rangos = rango.split(';')
+    for rango in lista_rangos:
+        limites_rango = rango.split(':')
+        if len(limites_rango)!=2:
+            print("No se ha proporcionado un rango adecuado")
+            return False
+        
+        
+        if limites_rango[0].isdigit() and limites_rango[1].isdigit():
+            dimension  = 'ROWS'
+            startIndex = int(limites_rango[0])
+            endIndex   = int(limites_rango[1])
+            
+        elif limites_rango[0].isalpha() and limites_rango[1].isalpha():
+            dimension  = 'COLUMNS'
+            rango_gsh  = gshTraducirRango(rangoLetras=rango, sheetId=idHoja)
+            startIndex = rango_gsh['startColumnIndex']
+            endIndex   = rango_gsh['endColumnIndex']
+        else:
+            print("No se ha proporcionado un rango adecuado")
+            return False       
+    
+        #Preparamos el rango que se va a agrupar y lo incluimos en la lista de peticiones
+        req_agrupar = { tipo_request: {
+                "range": {                
+                          "dimension" : dimension,
+                          "sheetId"   : idHoja,
+                          "startIndex": startIndex,
+                          "endIndex"  : endIndex
+                        }
+                }
+            }
+        lista_requests.append(req_agrupar)
+        
+        #Preparamos el rango que hay que colapsar y lo incluimos en la lista de peticiones correspondiente
+        #Esa lista es posible que no se use si se ha pedido que se quede abierto, pero aprovechamos para crearla
+        req_colapsar = {"updateDimensionGroup" : {
+                                  "dimensionGroup" : {
+                                                      "range": {                
+                                                                "dimension" : dimension,
+                                                                "sheetId"   : idHoja,
+                                                                "startIndex": startIndex,
+                                                                "endIndex"  : endIndex
+                                                               },
+                                                      "depth" : profundidad,
+                                                      "collapsed": True
+                                                      },
+                                  "fields" : '*'
+                                  }
+                        }
+        lista_requests_cerrar.append(req_colapsar)
+        
+        
+        
+    
+    #Ejecutar la petición
+    request = { 'requests' : lista_requests } 
+    
+    try:
+        sheets_service.spreadsheets().batchUpdate(spreadsheetId=spreadsheetId, body=request).execute()
+    except Exception as e:
+        print("Error formateando la hoja:", e)
+        return False
+    
+    
+    
+    
+    #En una segunda petición cierro las agrupaciones si se ha pedido
+    if not borrarAgrupacion and not dejarAbierto:
+        request = {'requests' : lista_requests_cerrar }
+        try:
+            sheets_service.spreadsheets().batchUpdate(spreadsheetId=spreadsheetId, body=request).execute()
+        except Exception as e:
+            print("Error formateando la hoja:", e)
+            return False
+    
+    return True
+
+
+
 ######################################################################################################
-# GOOGLE DOCS
+#%% ______________________________________________________________________________________________________
+#%% GOOGLE DOCS
 ######################################################################################################
+#%% gdcFindTag
 def gdcCrearDoc(docs_service, titulo):
     """
     Crea un documento de Google Docs.
@@ -3131,7 +3875,8 @@ def gdcCrearDoc(docs_service, titulo):
     }
     doc = docs_service.documents().create(body=body).execute()
     return doc
-#%%
+
+#%% gdcFindTag
 def gdcFindTag(docs_service, documentId, campo):
     """
     Encuentra un texto marcado entre llaves dentro de un documento de google docs.
@@ -3162,7 +3907,7 @@ def gdcFindTag(docs_service, documentId, campo):
                 break
     return posicion
                 
-#%%
+#%% gdcInsertarImagen
 def gdcInsertarImagen(docs_service, documentId, imgurl, campo, alto, ancho, unidad='PT'):
     """
     Inserta una imagen vía url en un documento de google docs.
@@ -3206,7 +3951,7 @@ def gdcInsertarImagen(docs_service, documentId, imgurl, campo, alto, ancho, unid
     insert_inline_image_response = response.get('replies')[0].get('insertInlineImage')
     return insert_inline_image_response
 
-#%%
+#%% gdcInsertarTexto
 def gdcInsertarTexto(docs_service, documentId, textos, posiciones):
     """
     Inserta un texto en un documento de Google Docs.
@@ -3235,7 +3980,7 @@ def gdcInsertarTexto(docs_service, documentId, textos, posiciones):
         body={'requests': requests}).execute()
     return result
 
-#%%
+#%% gdcReemplazarTexto
 def gdcReemplazarTexto(docs_service, documentId, campos, textos, envolverCampos=True):
     """
     Reemplaza un tag por un texto en un documento de google docs.
@@ -3272,11 +4017,11 @@ def gdcReemplazarTexto(docs_service, documentId, campos, textos, envolverCampos=
         documentId=documentId, body={'requests': requests}).execute()
     return result
 
-#%%
 ######################################################################################################
-# GMAIL
+#%% ______________________________________________________________________________________________________
+#%% GMAIL
 ######################################################################################################
-#%%
+#%% _ggmExtraerDetallesMail
 def _ggmExtraerDetallesMail(mensaje):
     '''Esta función es ayudante. Obtiene los principales detalles de la cabecera de un mail obtenido con el método ggmLeerCorreo
     Args:
@@ -3314,7 +4059,7 @@ def _ggmExtraerDetallesMail(mensaje):
     
     return detalles
 
-#%%
+#%% ggmCreateDraft
 def ggmCreateDraft(service, message, user_id='me'):
     """Crea un borrador.
         Args:
@@ -3334,7 +4079,7 @@ def ggmCreateDraft(service, message, user_id='me'):
     except Exception as error:
         print ('An error occurred:', error)
 
-#%%
+#%% _ggmConstruirMIMEMessage
 def _ggmConstruirMIMEMessage(to, subject='', message_text='', sender='me', replyTo = None, html=False, cc=None, cco=None, mensaje_respuesta=None, replyAll=True):
     '''Función interna de código que comparten ggmCreateMessage y ggmCreateMessageWithAttachments'''
     from email.mime.text import MIMEText
@@ -3411,7 +4156,7 @@ def _ggmConstruirMIMEMessage(to, subject='', message_text='', sender='me', reply
     
     return message, threadId
     
-#%%
+#%% _ggmExtraerPartes
 def _ggmExtraerPartes(parts):
     from email.mime.text      import MIMEText
     import base64
@@ -3446,7 +4191,7 @@ def _ggmExtraerPartes(parts):
             
     return partes
 
-#%%
+#%% ggmCreateMessage
 def ggmCreateMessage(to, subject='', message_text='', sender='me', replyTo = None, html=False, cc=None, cco=None, mensaje_respuesta=None, replyAll=True):
     """Create a message for an email.
 
@@ -3475,7 +4220,8 @@ def ggmCreateMessage(to, subject='', message_text='', sender='me', replyTo = Non
     if threadId:
         body['threadId'] = threadId
     return body
-#%%
+
+#%% ggmCreateMessageWithAttachment
 def ggmCreateMessageWithAttachment(to, file_dir, filename, subject='', message_text='', sender='me', replyTo=None, html=False, cc=None, cco=None, mensaje_respuesta=None, replyAll=True):
     """Create a message for an email.
 
@@ -3544,13 +4290,14 @@ def ggmCreateMessageWithAttachment(to, file_dir, filename, subject='', message_t
         body['threadId'] = threadId
     return body
 
-#%%
+#%% ggmCreateMessageWithAttachments
 def ggmCreateMessageWithAttachments(to, ficheros, subject='', message_text='', sender='me', replyTo=None, html=False, cc=None, cco=None, mensaje_respuesta=None, replyAll=True):
     """Create a message for an email.
 
     Args:
     - to: (str) Dirección o direcciones de correo destino. En caso de haber varias, se separan por coma.
     - ficheros: (list) Lista que contiene los nombres (con su ruta, si procede) de los ficheros que se desean adjuntar.
+                Opcionalmente, un fichero puede ir en un diccionario {'id':str, 'ruta':str} por si se quiere referencial al mismo desde el html del cuerpo del mensaje.
     - subject: (str) Opcional. Asunto del correo.
     - message_text: (str) Opcional. Cuerpo del correo.
     - sender: (str) Dirección del remitente (predeterminado 'me'). Se puede usar el valor especial 'me' para considerar que es la dirección propia. Si se desea utilizar un nombre distinto debe ir en formato "NOMBRE DEL REMITENTE <direccion_de_correo_propia@bbva.com>". La dirección de correo propia se puede obtener con la función ggmGetPrimaryAddress().
@@ -3577,6 +4324,11 @@ def ggmCreateMessageWithAttachments(to, ficheros, subject='', message_text='', s
     message, threadId = _ggmConstruirMIMEMessage(to, subject, message_text, sender, replyTo, html, cc, cco, mensaje_respuesta, replyAll)
 
     for fichero in ficheros:
+        id_fichero = None
+        if type(fichero) == dict:
+            id_fichero = fichero['id']
+            fichero    = fichero['ruta']
+
         nombre_fichero = os.path.split(fichero)[-1]
         content_type, encoding = mimetypes.guess_type(fichero)
     
@@ -3604,6 +4356,9 @@ def ggmCreateMessageWithAttachments(to, ficheros, subject='', message_text='', s
             fp.close()
     
         msg.add_header('Content-Disposition', 'attachment', filename=nombre_fichero)
+        if id_fichero:
+            msg.add_header('Content-ID', f'<{id_fichero}>')
+
         message.attach(msg)
 
     b64_bytes = base64.urlsafe_b64encode(message.as_bytes())
@@ -3614,7 +4369,7 @@ def ggmCreateMessageWithAttachments(to, ficheros, subject='', message_text='', s
     return body
 
 
-#%%
+#%% ggmAddAttachmentsToMessage
 def ggmAddAttachmentsToMessage(emailMessage, ficheros):
     """Add an attachment to an alredy existing email message.
 
@@ -3677,7 +4432,7 @@ def ggmAddAttachmentsToMessage(emailMessage, ficheros):
     body = {'raw': b64_string}
     return body
 
-#%%
+#%% ggmDescargarAdjuntos
 def ggmDescargarAdjuntos(gmail_service, mensaje=None, idmensaje=None, carpeta_descarga=None):
     """
         Recupera y descarga los adjuntos de un correo.
@@ -3738,7 +4493,7 @@ def ggmDescargarAdjuntos(gmail_service, mensaje=None, idmensaje=None, carpeta_de
         print ('Error descargando adjuntos', error)
     return downloaded
 
-#%%
+#%% ggmGetPrimaryAddress
 def ggmGetPrimaryAddress(service, user_id = 'me'):
     """
     Función que devuelve la dirección de mail princial del servicio de correo.
@@ -3765,7 +4520,7 @@ def ggmGetPrimaryAddress(service, user_id = 'me'):
     
     return primary_alias.get('sendAsEmail')
 
-#%%
+#%% ggmLeerCorreo
 def ggmLeerCorreo(gmail_service, idmensaje):
     """
         Recupera los detalles de un correo.
@@ -3780,7 +4535,7 @@ def ggmLeerCorreo(gmail_service, idmensaje):
         print('Error al recuperar mensaje:', err)
         return None
 
-#%%
+#%% ggmListarCorreos
 def ggmListarCorreos(
     gmail_service, 
     maxmensajes=100, 
@@ -3878,7 +4633,7 @@ def ggmListarCorreos(
             break            
     return listamensajes
 
-#%%
+#%% ggmObtenerCorreosHilo
 def ggmObtenerCorreosHilo(gmail_service, threadId, userId='me', orderAsc=True):
     """
     Función que proporciona los mensajes que corresponden a un determinado identificador
@@ -3923,7 +4678,7 @@ def ggmObtenerCorreosHilo(gmail_service, threadId, userId='me', orderAsc=True):
     except Exception as error:
         print(f'Error al obtener los correos del hilo {threadId}:', error)
 
-#%%
+#%% ggmSendMessage
 def ggmSendMessage(service, message, user_id='me'):
     """Send an email message.
         Args:
@@ -3942,10 +4697,11 @@ def ggmSendMessage(service, message, user_id='me'):
     except Exception as error:
         print ('An error occurred:', error)
 
-#%%
 ######################################################################################################
-# GOOGLE DRIVE
+#%% ______________________________________________________________________________________________________
+#%% GOOGLE DRIVE
 ######################################################################################################
+#%% gdrBorrarFichero
 def gdrBorrarFichero(drive_service, fileId, sharedDrive=True, exterminar=False):
     """
     Función que elimina un fichero de Google Drive estableciendo la marca trashed a True
@@ -3973,7 +4729,7 @@ def gdrBorrarFichero(drive_service, fileId, sharedDrive=True, exterminar=False):
             fileId=fileId, body=body, supportsAllDrives=sharedDrive).execute()
     return drive_response
     
-#%%
+#%% gdrCambiarPermisos
 def gdrCambiarPermisos(drive_service, fileId, reset='no', permisos=None, usuarios=None, roles=None, notificar=False, cualquiera = None, sharedDrive=False):
     """
     Función que gestiona los permisos de un elemento en Drive.
@@ -4170,7 +4926,7 @@ def gdrCambiarPermisos(drive_service, fileId, reset='no', permisos=None, usuario
     resp = batch.execute()
     return resp
 
-#%%
+#%% gdrCopiarDocumento
 def gdrCopiarDocumento(drive_service, fileId, nuevotitulo):
     """
     Función que realiza una copia de un documento drive.
@@ -4194,7 +4950,7 @@ def gdrCopiarDocumento(drive_service, fileId, nuevotitulo):
     
     return drive_response
 
-#%%
+#%% gdrCrearCarpeta
 def gdrCrearCarpeta(drive_service, nombre, padreId = None):
     """
     Función que genera una nueva carpeta en Drive.
@@ -4220,7 +4976,7 @@ def gdrCrearCarpeta(drive_service, nombre, padreId = None):
     
     return drive_response
 
-#%%
+#%% gdrDescargarCarpeta
 def gdrDescargarCarpeta(drive_service, folder_id:str, rutaDescarga:str, incluyeSubcarpetas:bool=False, sobreescribir:bool=False, logs:bool=True, sharedDrive:bool=False):
     """
     Esta función descargará los ficheros de una carpeta en google drive dado el identificador de la carpeta.
@@ -4309,7 +5065,7 @@ def gdrDescargarCarpeta(drive_service, folder_id:str, rutaDescarga:str, incluyeS
 
     return respuesta
 
-#%%
+#%% gdrDescargarFichero
 def gdrDescargarFichero(drive_service, fileId, rutaDescarga = None, mimeType = None, sobreescribir = False, logs = True, sharedDrive = False):
     """
     Esta función descargará un fichero de google drive en una ruta indicada.
@@ -4420,8 +5176,8 @@ def gdrDescargarFichero(drive_service, fileId, rutaDescarga = None, mimeType = N
     if logs:
         print("Download finished")
     return ruta
-#%%
 
+#%% gdrFindSharedDrive
 def gdrFindSharedDrive(drive_service, sharedDriveName):
     """
     Busca una unidad compartida por nombre y devuelve su id.
@@ -4453,7 +5209,7 @@ def gdrFindSharedDrive(drive_service, sharedDriveName):
     print('No se ha encontrado la unidad compartida:', sharedDriveName)
     return None
 
-#%%
+#%% gdrGetFileProperties
 def gdrGetFileProperties(drive_service, fileId = None, filePath = None, sharedDrive = False):
     """
     Devuelve todas las propiedades de un fichero.
@@ -4498,7 +5254,7 @@ def gdrGetFileProperties(drive_service, fileId = None, filePath = None, sharedDr
     else:
         return drive_service.files().get(fileId=fileId, fields='*', supportsAllDrives=sharedDrive).execute()
 
-#%%
+#%% gdrGetFileRevisions
 def gdrGetFileRevisions(drive_service, fileId, devuelvePandas = True):
     """
     Devuelve los detalles de las versiones de un fichero.
@@ -4542,7 +5298,7 @@ def gdrGetFileRevisions(drive_service, fileId, devuelvePandas = True):
         df['modifiedTime'] = pd.to_datetime(df['modifiedTime']).dt.tz_convert('Europe/Madrid')
         return df
 
-#%%
+#%% gdrGetFolderId
 def gdrGetFolderId(drive_service, folderPath, sharedDrive = False):
     """
     Dada una ruta de Google Drive, devuelve los identificadores de las carpetas encontradas de la más general a la más profunda.
@@ -4595,7 +5351,7 @@ def gdrGetFolderId(drive_service, folderPath, sharedDrive = False):
 
     return retobj
 
-#%%
+#%% gdrListFiles
 def gdrListFiles(drive_service, folderId=None, folderPath=None, sharedDrive = False, trashed=False, fields='kind, id, name, mimeType'):
     """
     Lista los ficheros contenidos en una carpeta de drive.
@@ -4633,6 +5389,10 @@ def gdrListFiles(drive_service, folderId=None, folderPath=None, sharedDrive = Fa
     fields = 'nextPageToken, files(' + fields + ')'
     nextPageToken = None
     files = []
+    
+    #Vamos a meter un control de tiempo
+    from datetime import datetime
+    inicio = datetime.today()
     while True:
         try:
             respuesta = drive_service.files().list(q=q, fields=fields, supportsAllDrives=sharedDrive, includeItemsFromAllDrives=sharedDrive, pageToken=nextPageToken).execute()#['files']
@@ -4642,11 +5402,16 @@ def gdrListFiles(drive_service, folderId=None, folderPath=None, sharedDrive = Fa
                 continue
             else:
                 break
+            #Controlamos timeout
+            if (datetime.today() - inicio).seconds > 60:
+                print('Timeout listando ficheros de carpeta. Devuelve lo que tiene.')
+                break
         except Exception as err:
-            #print(err)
+            print(respuesta, err)
             break
     return files
-#%%
+
+#%% gdrMoveFile
 def gdrMoveFile(drive_service, fileId, destinationId=None, destinationPath=None, action = 'add', sharedDrive = False):
     """
     Mueve un fichero de una carpeta a otra.
@@ -4691,7 +5456,7 @@ def gdrMoveFile(drive_service, fileId, destinationId=None, destinationPath=None,
         ).execute()
     return file
                 
-#%%
+#%% gdrRecursiveFind
 def gdrRecursiveFind(drive_service, folderId, ruta = None):
     """
     Función que realiza una búsqueda recursiva de todos los ficheros que están
@@ -4723,7 +5488,7 @@ def gdrRecursiveFind(drive_service, folderId, ruta = None):
 
     return df.reset_index(drop = True)
 
-#%%
+#%% gdrRenombrarFichero
 def gdrRenombrarFichero(drive_service, file_id, nuevo_nombre):	
     """
     Función que renombra un fichero dentro del Drive.
@@ -4747,7 +5512,7 @@ def gdrRenombrarFichero(drive_service, file_id, nuevo_nombre):
      ).execute()
     return updatedFile
 
-#%%
+#%% gdrSubirVersion
 def gdrSubirVersion(drive_service, idDriveFile, filename, mimetype=None, nuevoNombre = None, nuevaDescripcion = None):
     """
     Función que sube un fichero local a Google Drive
@@ -4762,8 +5527,8 @@ def gdrSubirVersion(drive_service, idDriveFile, filename, mimetype=None, nuevoNo
     Devuelve diccionario. Si la subida ha tenido éxito, el identificador estará en la propiedad 'id'.
     """
     import mimetypes
-    from apiclient.http import MediaFileUpload,MediaIoBaseDownload
-    from apiclient import errors
+    from googleapiclient.http import MediaFileUpload
+    from googleapiclient import errors
 
     try:
         drivefile = drive_service.files().get(fileId=idDriveFile, supportsAllDrives=True).execute()
@@ -4804,7 +5569,7 @@ def gdrSubirVersion(drive_service, idDriveFile, filename, mimetype=None, nuevoNo
         print ('Ha ocurrido un error:\n', error)
         return None
 
-#%%
+#%% gdrUploadFile
 def gdrUploadFile(drive_service, filename, mimetype=None):
     """
     Función que sube un fichero local a Google Drive
@@ -4814,6 +5579,7 @@ def gdrUploadFile(drive_service, filename, mimetype=None):
         mimetype      -- (str) formato de fichero. Ej. 'image/jpeg'. Por defecto None, la función intenta inferir el mimetype.
     Devuelve diccionario. Si la subida ha tenido éxito, el identificador estará en la propiedad 'id'.
     """
+    from googleapiclient.http import MediaFileUpload
 
     file_metadata = {'name': filename.split('/')[-1].split('\\')[-1]}
 
@@ -4830,7 +5596,7 @@ def gdrUploadFile(drive_service, filename, mimetype=None):
     ).execute()
     return file
 
-#%%
+#%% gdrUploadFolder
 def gdrUploadFolder(drive_service, carpeta_local, padreId=None, recursivo = False, incluir_raiz=True, subirVersion=True, log=True):
     """
     Función que sube el contenido completo de una carpeta local a Google Drive
@@ -4925,10 +5691,12 @@ def gdrUploadFolder(drive_service, carpeta_local, padreId=None, recursivo = Fals
     return {'creados': creados, 'actualizados': actualizados, 'errores':errores}
 
 
-#%%
+#%% ______________________________________________________________________________________________________
 ######################################################################################################
-# GOOGLE SLIDES
+#%% GOOGLE SLIDES
 ######################################################################################################
+
+#%% gslReemplazarTexto
 def gslReemplazarTexto(slides_service, presentation_id, campos, textos, envolverCampos=True):
     """
     Reemplaza un tag por un texto en un documento de google docs.
@@ -4970,11 +5738,17 @@ def gslReemplazarTexto(slides_service, presentation_id, campos, textos, envolver
 
     return result
 
-#%%
+#%% ______________________________________________________________________________________________________
 ######################################################################################################
-# GOOGLE GROUPS
+#%% GOOGLE GROUPS
 ######################################################################################################
-def ggrAgregarMiembros(groups_service, group_mail:str, usuarios:"str|tuple|list[str]|list[tuple(str)]"):
+
+#%% ggrAgregarMiembros
+def ggrAgregarMiembros(
+    groups_service, 
+    group_mail     : str, 
+    usuarios       : Union[str, Tuple, List[str], List[Tuple[str]]]
+):
     '''
     Función que añade miembros a un google group
 
@@ -5058,7 +5832,7 @@ def ggrAgregarMiembros(groups_service, group_mail:str, usuarios:"str|tuple|list[
             ko.append(email) 
     return {'ok':ok, 'ko':ko}
 
-#%%
+#%% ggrListarMiembros
 def ggrListarMiembros(groups_service, group_mail:str):
     '''
     Recupera los miembros de un google group
@@ -5095,8 +5869,12 @@ def ggrListarMiembros(groups_service, group_mail:str):
         return None
    
  
-#%%
-def ggrQuitarMiembros(groups_service, group_mail:str, usuarios:"str|tuple|list[str]|list[tuple(str)]"):
+#%% ggrQuitarMiembros
+def ggrQuitarMiembros(
+    groups_service, 
+    group_mail     : str, 
+    usuarios       : Union[str, List[str]],
+):
     '''
     Función que quita miembros de un google group
 
@@ -5163,12 +5941,13 @@ def ggrQuitarMiembros(groups_service, group_mail:str, usuarios:"str|tuple|list[s
             ko.append(email) 
     return {'ok':ok, 'ko':ko}
     
-#%%
+#%% ______________________________________________________________________________________________________
 ######################################################################################################
-# GOOGLE CALENDAR
+#%% GOOGLE CALENDAR
 ######################################################################################################
-#%%
-def gclCrearEvento(calendar_service, calendarId:str = 'primary', titulo:str='', inicio=None, fin=None, duracion=50, detalles=None, invitados:[str]=[], opcionales:[str]=[], adjuntos:[str]=[], drive_service=None, video:bool=False, notificar:bool=False):
+
+#%% gclCrearEvento
+def gclCrearEvento(calendar_service, calendarId:str = 'primary', titulo:str='', inicio=None, fin=None, duracion=50, detalles=None, invitados:List[str]=[], opcionales:List[str]=[], adjuntos:List[str]=[], drive_service=None, video:bool=False, notificar:bool=False):
     '''
     Crear un evento en un calendario
     https://developers.google.com/calendar/api/v3/reference/events/insert?hl=es-419
@@ -5279,7 +6058,7 @@ def gclCrearEvento(calendar_service, calendarId:str = 'primary', titulo:str='', 
     except:
         return None
     
-#%%
+#%% gclListarCalendarios
 def gclListarCalendarios(calendar_service, primary:bool=True, minAccessRole:str='writer', showDeleted:bool=False, showHidden:bool=False):
     '''
     Lista los calendarios del usuario
@@ -5319,7 +6098,7 @@ def gclListarCalendarios(calendar_service, primary:bool=True, minAccessRole:str=
         print(e)
     return calendarios
 
-#%%
+#%% gclListarEventos
 def gclListarEventos(calendar_service, calendarId:str = 'primary', busqueda:str=None, **resto_parametros):
     '''
     Busca un evento en un calendario
@@ -5356,7 +6135,7 @@ def gclListarEventos(calendar_service, calendarId:str = 'primary', busqueda:str=
         
     return df_eventos
 
-#%%
+#%% gclObtenerCalendario
 def gclObtenerCalendario(calendar_service, calendarId:str='primary'):
     '''
     Lista los calendarios del usuario
@@ -5374,11 +6153,12 @@ def gclObtenerCalendario(calendar_service, calendarId:str='primary'):
         print(e)
         return None
 
-#%%
+#%% ______________________________________________________________________________________________________
 ######################################################################################################
-# GOOGLE CONTACTS
+#%% GOOGLE CONTACTS
 ######################################################################################################
-#%%
+
+#%% gctBuscarPersonas
 def gctBuscarPersonas(contacts_service, busqueda:str):
     '''
     Realiza una búsqueda en el directorio
@@ -5407,26 +6187,33 @@ def gctBuscarPersonas(contacts_service, busqueda:str):
                 'apellidos'       : persona['names'][0]['familyName'],
                 'email'           : persona['emailAddresses'][0]['value'],
             }
-            for identificador in persona['externalIds']:
-                with suppress (Exception): fila[identificador['type']] = identificador['value']
-            for direccion in persona['addresses']:
-                if 'primary' in direccion['metadata'] and direccion['metadata']['primary']:
-                    with suppress (Exception): fila['país']      = direccion['country']
-                    with suppress (Exception): fila['codPaís']   = direccion['countryCode']
-                    with suppress (Exception): fila['ciudad']    = direccion['city']
-                    with suppress (Exception): fila['cp']        = direccion['postalCode']
-                    with suppress (Exception): fila['pobox']     = direccion['poBox']
-                    with suppress (Exception): fila['direccion'] = direccion['streetAddress']
-                    with suppress (Exception): fila['lugar']     = direccion['formattedValue']
+            
+            if 'externalIds' in persona:
+                for identificador in persona['externalIds']:
+                    with suppress (Exception): fila[identificador['type']] = identificador['value']
+            
+            if 'addresses' in persona:
+                for direccion in persona['addresses']:
+                    if 'primary' in direccion['metadata'] and direccion['metadata']['primary']:
+                        with suppress (Exception): fila['país']      = direccion['country']
+                        with suppress (Exception): fila['codPaís']   = direccion['countryCode']
+                        with suppress (Exception): fila['ciudad']    = direccion['city']
+                        with suppress (Exception): fila['cp']        = direccion['postalCode']
+                        with suppress (Exception): fila['pobox']     = direccion['poBox']
+                        with suppress (Exception): fila['direccion'] = direccion['streetAddress']
+                        with suppress (Exception): fila['lugar']     = direccion['formattedValue']
 
-            for puesto in persona['organizations']:
-                if 'primary' in puesto['metadata'] and puesto['metadata']['primary']:
-                    with suppress (Exception): fila['área']          = puesto['department']
-                    with suppress (Exception): fila['empresa']       = puesto['name']
-                    with suppress (Exception): fila['puesto']        = puesto['title']
-                    with suppress (Exception): fila['localización']  = puesto['location']
-            for i, telefono in enumerate(persona['phoneNumbers']):
-                with suppress (Exception): fila['Teléfono {0}'.format(i)] = telefono['value']
+            if 'organizations' in persona:
+                for puesto in persona['organizations']:
+                    if 'primary' in puesto['metadata'] and puesto['metadata']['primary']:
+                        with suppress (Exception): fila['área']          = puesto['department']
+                        with suppress (Exception): fila['empresa']       = puesto['name']
+                        with suppress (Exception): fila['puesto']        = puesto['title']
+                        with suppress (Exception): fila['localización']  = puesto['location']
+                        
+            if 'phoneNumbers' in persona:
+                for i, telefono in enumerate(persona['phoneNumbers']):
+                    with suppress (Exception): fila['Teléfono {0}'.format(i)] = telefono['value']
 
             resultado.append(fila)
 
@@ -5434,11 +6221,13 @@ def gctBuscarPersonas(contacts_service, busqueda:str):
         if not page_token:
             break
     return pd.DataFrame.from_dict(resultado)
-#%%
+
+#%% ______________________________________________________________________________________________________
 ######################################################################################################
-# GOOGLE APPS SCRIPTS
+#%% GOOGLE APPS SCRIPTS
 ######################################################################################################
-#%%
+
+#%% gasLlamarFuncion
 def gasLlamarFuncion(gas_service, implementationId: str, nombre_funcion:str, lista_argumentos:list = []):
     '''
     Función que invoca a una función alojada en Google Apps Scripts. 

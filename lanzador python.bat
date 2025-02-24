@@ -8,6 +8,11 @@ if exist "C:\Program Files\python39-32\python.exe" (
    goto finalizar
 )
 
+if exist "C:\Program Files\python312\python.exe" (
+   "C:\Program Files\python312\python.exe" %script%
+   goto finalizar
+)
+
 ::Si no existe el python directamente, buscamos la instalación de Anaconda en las posibles carpetas
 if exist "C:\Program Files\Anaconda\python.exe" (
 	set pyexe="C:\Program Files\Anaconda\python.exe"
