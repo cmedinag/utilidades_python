@@ -1,4 +1,5 @@
-#El primer paso es asegurar que las librerías de google están instaladas. Sino, instalarlas antes de nada.
+#%%
+# #El primer paso es asegurar que las librerías de google están instaladas. Sino, instalarlas antes de nada.
 def autoSetProxy(proxy = "http://proxyvip:8080", url='https://pypi.python.org/simple', user=None, password=None, log=True):
     '''
     Esta función se encarga de detectar si hace falta un proxy para la salida a internet.
@@ -39,6 +40,7 @@ def autoSetProxy(proxy = "http://proxyvip:8080", url='https://pypi.python.org/si
                 os.environ['https_proxy'] = ''
     return False
 
+#%%
 def autoInstalarPaquete(libreria:str, alt:'str|None'=None, log:bool=False, upgrade:bool=False, **kwargs):
     '''
     Función que comprueba si una librería está instalada en el sistema, y, de no ser así, la instala con pip.
@@ -89,6 +91,7 @@ def autoInstalarPaquete(libreria:str, alt:'str|None'=None, log:bool=False, upgra
      
     return False
 
+#%%
 def setProxy(user = None, pwd = None, port=8080):
     """
     Genera, para la sesion actual de Python, un proxy con el usuario y contraseña en proxyvip
@@ -113,7 +116,6 @@ def resetProxy():
     os.environ["HTTPS_PROXY"] = ""
 
 #%%
-
 def str2ascii(cadena):
     "Función que recibe una cadena y la devuelve cambiando caracteres latinos por caracteres ascii-7."
     table = {
@@ -192,3 +194,17 @@ def getUserPwd(titulo = 'Introduzca usuario y clave' , user=None):
     #Si ha dado al botón de cerrar devolvemos None
     else:
         return None
+
+#%%
+def grabarlog(ruta, nombrefichero='log_uso.log', territorial='', mensaje=''):
+    import os
+    from datetime import datetime
+    ahora = datetime.today().strftime('%Y-%m-%d %H:%M:%S')
+    user = os.getenv('USERNAME')
+    
+    os.makedirs(ruta, exist_ok=True)
+    
+    with open(f'{ruta}/{nombrefichero}', 'a', encoding='utf-8') as log:
+        log.write(f'[{ahora}] - {str(territorial).zfill(4)} - {user} - {mensaje}\n')
+
+# %%

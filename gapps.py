@@ -38,6 +38,7 @@ Funciones:
     - Lectura / Escritura
         - gshAñadirFilas: añade filas a continuación de una tabla
         - gshDescargarHoja: exporta una sola hoja de una gsheet.
+        - gshDescargarHojasPDF: exporta una o varias de una gsheet a pdf.
         - gshEscribirHoja: escribe un pandas dataframe en una hoja de google.
         - gshEscribirRango: escribe una lista de valores en una hoja de google.
         - gshLeerHoja: lee el contenido de un rango de una hoja de un libro Google.
@@ -49,6 +50,7 @@ Funciones:
         - gshInsertarFilasColumnas: Esta función inserta filas o columnas a una hoja de google sheets
         - gshEliminarFilasColumnas: Esta función elimina filas o columnas de una hoja de google sheets
     - Formato
+        - convertir_numero_a_fecha: convierte un dato numérico a objeto fecha
         - gshBordearRango: formatea los bordes de un rango de celdas.
         - gshEliminarFormatoRango: Para un rango de celdas, las vuelve a poner con el formato por defecto
         - gshEliminarFormatosCondicionalesHoja: Elimina todas las reglas de formato condicional de una hoja
@@ -123,8 +125,12 @@ Funciones:
 """
 
 from __future__ import print_function
-__version__ = '20250109.0'
+__version__ = '20250317.0'
 __changelog__ = '''
+[2025-03-17] - Se añaden los parámetros tituloHojas y tituloLibro a las funciones de gshDescargarHoja
+[2025-03-13] - Se añade la función convertir_numero_a_fecha
+[2025-03-12] - Se añade la función gshDescargarHojasPDF
+[2025-03-10] - Se añade la clave token a la salida de gapps.connect
 [2025-01-09] - Se incorpora la función gshAñadirFilas.
 [2024-11-29] - Se da la opción de añadir id de adjunto en ggmCreateMessageWithAttachments.
 '''
@@ -476,6 +482,7 @@ def connect(
                 service_dict[service] = build('script', 'v1', credentials=creds)
         except Exception as err:
             service_dict[service] = 'Error: ' + str(err)
+    service_dict['token'] = creds.token
     socket.setdefaulttimeout(None)
     return service_dict
 
@@ -568,6 +575,30 @@ FORMATOS_BASE = {
         'texto_14_posic'        : {"type" : "TEXT"     , "pattern" : '00000000000000_@'},
         'texto_26_posic'        : {"type" : "TEXT"     , "pattern" : '00000000000000000000000000_@'}
         }
+
+#%%
+def convertir_numero_a_fecha(dato, origen:Literal['GHSEETS', 'EXCEL']='GSHEETS'):
+    '''
+    Función que convierte un dato numérico a fecha.
+
+    Args:
+        dato   : float - El dato que se desea convertir
+        origen : 'GSHEETS' o 'EXCEL' literal para saber cuál es la fecha de origen (30/12/1899 en gsheets, 1/1/1900 en excel)
+    
+    Returns:
+        datetime
+    '''
+    from datetime import datetime, timedelta
+
+    if pd.isna(dato):
+        return None
+
+    if origen == 'GSHEETS':
+        origen = datetime(1899, 12, 30)
+    else:
+        origen = datetime(1900, 1, 1)
+
+    return origen + timedelta(days=dato)
 
 #%% gshAjustarDimensionHoja
 def gshAjustarDimensionHoja(
@@ -1290,7 +1321,25 @@ def gshCrearLibro(sheets_service, nombreLibro, nombreHoja = None):
     return request.execute()
 
 #%% gshDescargarHoja
-def gshDescargarHoja(sheets_service, spreadsheetid, hojaId = None, nombreHoja = None, ficheroDescarga = None, tipo='pdf', sobreescribir = False, vertical = True, size = 'A4'):
+def gshDescargarHoja(
+        sheets_service, 
+        spreadsheetid, 
+        hojaId             = None, 
+        nombreHoja         = None, 
+        ficheroDescarga    = None, 
+        tipo               = 'pdf', 
+        sobreescribir      = False, 
+        vertical           = True, 
+        size               = 'A4', 
+        margins       : list  = None, 
+        pagenum       : Literal['UNDEFINED','RIGHT','CENTER','LEFT'] = None,
+        tituloHojas   : bool  = False,
+        tituloLibro   : bool  = False,
+        gridlines     : bool  = False,
+        freezerows    : bool  = True,
+        ajustar_ancho : bool  = True,
+        rango         : dict  = None,        
+):
     """
     Esta función descargará una sola hoja de una gsheet a un fichero.
     sheets_service  -- Objeto servicio con permisos de lectura en Google Sheets. Se obtiene con el método connect.
@@ -1302,13 +1351,21 @@ def gshDescargarHoja(sheets_service, spreadsheetid, hojaId = None, nombreHoja = 
     sobreescribir   -- (bool) Default False. Indica si debe machacar el fichero en caso de que exista, o crear un nombre nuevo en su lugar.
     vertical        -- (bool) Default True. Indica si la exportación se debe realizar (si tipo es 'pdf') en vertical (True) o apaisado (False) 
     size            -- (str) Tamaño del folio a descargar (si tipo es 'pdf')
+    margins         -- (list | None) Tamaño de los márgenes a aplicar, superior, inferior, izquierdo, derecho (ej. [1,0,2.25,2.25])
+    pagenum         -- (str | None) Dónde ubicar el número de página (ej. 'RIGHT')
+    tituloHojas     -- (bool) (por defecto False) Indica si imprimir el título de cada hoja
+    tituloLibro     -- (bool) (por defecto False) Indica si imprimir el título del libro
+    gridlines       -- (bool) (por defecto False) Indica si imprimir las líneas de cuadrícula
+    freezerows      -- (bool) (por defecto True)  Indica si repetir las filas inmovilizadas en cada página
+    ajustar_ancho   -- (bool) (por defecto True) Indica si autoajustar el ancho del contenido al ancho de la página
+    rango           -- (dict) (por defecto None) Indica un rango específico. Ejemplo, A1:C2 sería: {'r1':0, 'c1':0, 'r2':2, 'c2':3}
     
     return          -- (str) Ruta completa del fichero descargado.
     """
     import urllib.parse
     import os
 
-    result = sheets_service.spreadsheets().get(spreadsheetId = spreadsheetid).execute()
+    result = gshLeerPropiedadesLibro(sheets_service, spreadsheetid, fields='spreadsheetUrl,properties.title,sheets.properties.sheetId,sheets.properties.title')
     spreadsheetUrl = result['spreadsheetUrl']
     if nombreHoja is None and hojaId is None:
         print('Necesito o el id de la hoja (gid) o el nombre de la misma')
@@ -1317,41 +1374,205 @@ def gshDescargarHoja(sheets_service, spreadsheetid, hojaId = None, nombreHoja = 
         for sheet in result['sheets']:
             if sheet['properties']['title'] == nombreHoja:
                 hojaId = sheet['properties']['sheetId']
+                break
     if hojaId is None:
         print('Hoja no encontrada')
         return None
     
     exportUrl = spreadsheetUrl.replace("/edit", '/export')
     params = {
-        'format': tipo,
-        'gid': hojaId,
-    } 
+        'format'   : tipo,
+        'gid'      : hojaId,
+    }
     if tipo == 'pdf':
-        if not vertical:
-            params['portrait'] = False
-        params['size'] =  size
-        
+        params['portrait']   = vertical
+        params['size']       = size
+        params['fitw']       = ajustar_ancho
+        params['gridlines']  = gridlines
+        params['freezerows'] = freezerows
+        params['sheetnames'] = tituloHojas
+        params['printtitle'] = tituloLibro
+    
+        if margins:    
+            params['top_margin']    = margins[0]
+            params['bottom_margin'] = margins[0]
+            params['left_margin']   = margins[0]
+            params['right_margin']  = margins[0]
+
+        if pagenum:
+            params['pagenum'] = pagenum
+        if rango:
+            params['range'] = rango
+
     queryParams = urllib.parse.urlencode(params)
     url = exportUrl + '&' + queryParams
-    
     resp, content = sheets_service._http.request(url)
+    if resp.status != 200:
+        print(f"Error al descargar la hoja {hojaId}. Código de estado: {resp.status}")
+        return None
+    
     if ficheroDescarga is None:
         ficheroDescarga = result['properties']['title'] + '_' + str(hojaId) + '.' + tipo
-    if not sobreescribir:
-        if os.path.isfile(ficheroDescarga):
-            fichero = os.path.splitext(ficheroDescarga)
-            i = 1
-            while True:
-                rutaNueva = fichero[0] + ' (' + str(i) + ')' + fichero[1]
-                if not os.path.isfile(rutaNueva):
-                    ficheroDescarga = rutaNueva
-                    break
-                i=i+1
 
-    with open(ficheroDescarga, 'wb') as descarga:
-        descarga.write(content)
-    return ficheroDescarga
+    if not sobreescribir:
+        base, ext = os.path.splitext(ficheroDescarga)
+        i = 1
+        while os.path.exists(ficheroDescarga):
+            ficheroDescarga = f"{base} ({i}){ext}"
+            i += 1
+
+    try:
+        with open(ficheroDescarga, 'wb') as descarga:
+            descarga.write(content)
     
+        return ficheroDescarga
+    except:
+        print('Error al escribir el fichero')
+        return None
+
+#%%
+def gshDescargarHojasPDF(
+        sheets_service, 
+        spreadsheetid, 
+        hojaIds               = None, 
+        nombreHojas   : Union[List,Tuple,str] = None, 
+        ficheroDescarga : str = None, 
+        sobreescribir : bool  = False, 
+        vertical      : bool  = True, 
+        size          : str   = 'A4', 
+        margins       : Union[List,Tuple]  = None, 
+        pagenum       : Literal['UNDEFINED','RIGHT','CENTER','LEFT'] = None,
+        tituloHojas   : bool  = False,
+        tituloLibro   : bool  = False,
+        gridlines     : bool  = False,
+        freezerows    : bool  = True,
+        ajustar_ancho : bool  = True,
+        rango         : dict  = None,
+        sleep_time    : int   = 3,      
+    ):
+    """
+    Esta función descargará una sola hoja de una gsheet a un fichero.
+    sheets_service  -- Objeto servicio con permisos de lectura en Google Sheets. Se obtiene con el método connect.
+    spreadsheetid   -- (str) Identificador de la gsheet en Drive.
+    hojaIds         -- (str|list) Identificador/es de la hoja (gid)
+    nombreHojas     -- (str|list) Nombre/s de la/s hoja/s. Si se proporciona hojaId, no se hace caso a este parámetro.
+    ficheroDescarga -- (str) Fichero de descarga en la que dejar el fichero. Si no se indica, lo dejará en la carpeta de trabajo con el nombre de la gsheet y el id de la hoja descargada.
+    sobreescribir   -- (bool) Default False. Indica si debe machacar el fichero en caso de que exista, o crear un nombre nuevo en su lugar.
+    vertical        -- (bool) Default True. Indica si la exportación se debe realizar (si tipo es 'pdf') en vertical (True) o apaisado (False) 
+    size            -- (str) (por defecto A4) Tamaño del folio a descargar (si tipo es 'pdf')
+    margins         -- (list | None) Tamaño de los márgenes a aplicar, superior, inferior, izquierdo, derecho (ej. [1,0,2.25,2.25])
+    pagenum         -- (str | None) Dónde ubicar el número de página (ej. 'UNDEFINED', 'RIGHT', 'CENTER' o 'LEFT')
+    tituloHojas     -- (bool) (por defecto False) Indica si imprimir el título de cada hoja
+    tituloLibro     -- (bool) (por defecto False) Indica si imprimir el título del libro
+    gridlines       -- (bool) (por defecto False) Indica si imprimir las líneas de cuadrícula
+    freezerows      -- (bool) (por defecto True)  Indica si repetir las filas inmovilizadas en cada página
+    ajustar_ancho   -- (bool) (por defecto True) Indica si autoajustar el ancho del contenido al ancho de la página
+    rango           -- (dict) (por defecto None) Indica un rango específico. Ejemplo, A1:C2 sería: {'r1':0, 'c1':0, 'r2':2, 'c2':3}
+    sleep_time      -- (int) Tiempo en segundos para esperar entre descargas, para evitar error 429 (too many requests)
+    
+    return          -- (str) Ruta completa del fichero descargado.
+    """
+    import PyPDF2
+    import os, time
+    from PyPDF2.errors import PdfReadError
+
+    result = gshLeerPropiedadesLibro(sheets_service, spreadsheetid, fields='spreadsheetUrl,properties.title,sheets.properties.sheetId,sheets.properties.title')
+
+    if nombreHojas is None and hojaIds is None:
+        print('Necesito o ids de hojas (gid) o nombres de las mismas')
+        return None
+    
+    elif hojaIds is None:
+        hojaIds = []
+        if isinstance(nombreHojas, str):
+            nombreHojas = [nombreHojas]
+        elif not isinstance(nombreHojas, list):
+            print('El parámetro nombreHojas no es de un tipo válido')
+        
+        #Buscamos el id de cada hoja
+        for nombreHoja in nombreHojas:
+            for sheet in result['sheets']:
+                if sheet['properties']['title'] == nombreHoja:
+                    hojaIds.append(sheet['properties']['sheetId'])
+                    break
+            
+
+    if hojaIds is None or len(hojaIds)==0:
+        print('Hojas no encontradas')
+        return None
+
+    #Vamos a descargar todos los ficheros, para después unirlos.
+    ficheros = []
+    for hoja in hojaIds:
+        print('Descargando', hoja)
+        fichero = gshDescargarHoja(
+            sheets_service = sheets_service, 
+            spreadsheetid  = spreadsheetid,
+            hojaId         = hoja,
+            tipo           = 'pdf',
+            sobreescribir  = sobreescribir,
+            vertical       = vertical,
+            size           = size,
+            margins        = margins,
+            pagenum        = pagenum,
+            gridlines      = gridlines,
+            tituloHojas    = tituloHojas,
+            tituloLibro    = tituloLibro,
+            freezerows     = freezerows,
+            ajustar_ancho  = ajustar_ancho,
+            rango          = rango,
+
+        )
+
+        if fichero:
+            ficheros.append(fichero)
+        
+        #Dormimos un poco para evitar el error 429 de too many requests 
+        time.sleep(sleep_time)
+    
+    if len(ficheros) == 0:
+        print('No se ha podido descargar ninguna hoja.')
+        return None
+    
+    #Ahora toca unirlos en uno:
+    if ficheroDescarga is None:
+        ficheroDescarga = result['properties']['title'] + '.pdf'
+    
+    if not sobreescribir:
+        base, ext = os.path.splitext(ficheroDescarga)
+        i = 1
+        while os.path.exists(ficheroDescarga):
+            ficheroDescarga = f"{base} ({i}){ext}"
+            i += 1
+
+    try:
+        print('Uniendo ficheros...')
+        # Crear un objeto de escritura de PDF
+        pdf_writer = PyPDF2.PdfWriter()
+        for pdf_file in ficheros:
+            with open(pdf_file, 'rb') as f:
+                pdf_reader = PyPDF2.PdfReader(f)
+                for page_num in range(len(pdf_reader.pages)):
+                    page = pdf_reader.pages[page_num]
+                    pdf_writer.add_page(page)
+
+        with open(ficheroDescarga, 'wb') as salida_pdf:
+            pdf_writer.write(salida_pdf)
+
+    except (PdfReadError, OSError) as e:
+        print(f"Error al unir los PDFs: {e}")
+        return None
+    finally:
+        print('Borrando temporales...')
+        for fichero in ficheros:
+            try:
+                os.remove(fichero)
+            except OSError as e:
+                print(f"Error al borrar {fichero}: {e}")
+
+
+    return ficheroDescarga
+
 #%% gshDuplicarHoja
 def gshDuplicarHoja(sheets_service, spreadsheetId, nombreHojaOrig, nombreHojaNueva, indiceNuevaHoja = None):
     """
