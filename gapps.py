@@ -125,8 +125,10 @@ Funciones:
 """
 
 from __future__ import print_function
-__version__ = '20250317.0'
+__version__ = '20250429.0'
 __changelog__ = '''
+[2025-04-29] - Arreglado bug en control de errores de gdrListFiles
+[2025-04-10] - Reforzado control de errores en convertir_numero_a_fecha
 [2025-03-17] - Se añaden los parámetros tituloHojas y tituloLibro a las funciones de gshDescargarHoja
 [2025-03-13] - Se añade la función convertir_numero_a_fecha
 [2025-03-12] - Se añade la función gshDescargarHojasPDF
@@ -356,8 +358,8 @@ def connect(
     timeout              = None,
 ):
 
-    """Shows basic usage of the Sheets API.
-    Establece una conexión con Google para poder leer excels de Drive.
+    """
+    Establece una conexión con Google usando una cuenta personal para poder usar las APIs habilitadas de un proyecto.
     Parámetros:
     ruta_credenciales    -- (str) Indica en qué carpeta se encuentra el archivo de credenciales json.
     archivo_credenciales -- (str) Nombre del archivo .json que contiene las credenciales de usuario. Necesario si no existe token. ('credentials.json' por defecto).
@@ -486,6 +488,98 @@ def connect(
     socket.setdefaulttimeout(None)
     return service_dict
 
+#%% connect_service_account
+def connect_service_account(
+    creds_file           = 'credentials.json', 
+    services             = [], 
+):
+    """
+    Establece una conexión con Google usando una cuenta de servicio para poder usar las APIs habilitadas de un proyecto.
+    Parámetros:
+    creds_file   -- (str) Ruta completa del archivo .json que contiene las credenciales de usuario. Necesario si no existe token. ('credentials.json' por defecto).
+    services     -- lista de (str). Indica los servicios para los que se solicita canal. Ejemplos: ['sheets'], ['sheets', 'drive', 'docs']
+    
+    Salida:
+    (diccionario) Diccionario cuya clave será el tipo de servicio y como valor el objeto servicio adecuado. Ej.: {'sheets': (objeto servicio de google)}.
+    Posibles claves: 'sheets', 'drive', 'docs', 'gmail', 'groups', 'calendar', 'contacts', 'scripts'
+    
+    Ejemplo de llamada:
+        import gapps
+        servicios = gapps.connect_service_account(
+            creds_file = 'c:/google/credentials.json',
+            services   = ['sheets', 'drive', 'docs', 'gmail', 'groups', 'calendar', 'contacts', 'scripts']
+        )
+    """
+    
+    import os
+    from google.oauth2.service_account import Credentials
+    from googleapiclient.discovery import build
+
+    if not os.path.exists(creds_file):
+        raise FileNotFoundError(f'El archivo de credenciales {creds_file} no existe')
+
+    SCOPES = []
+    for service in services:
+        if service == 'sheets':
+            SCOPES.append('https://www.googleapis.com/auth/spreadsheets')
+        elif service == 'drive':
+            SCOPES.append('https://www.googleapis.com/auth/drive.file')
+            SCOPES.append('https://www.googleapis.com/auth/drive')
+            SCOPES.append('https://www.googleapis.com/auth/drive.appdata')
+            SCOPES.append('https://www.googleapis.com/auth/drive.metadata')
+        elif service == 'slides':
+            SCOPES.append('https://www.googleapis.com/auth/presentations')
+        elif service == 'docs':
+            SCOPES.append('https://www.googleapis.com/auth/docs')
+        elif service == 'gmail':
+            SCOPES.append('https://mail.google.com/')
+            SCOPES.append('https://www.googleapis.com/auth/gmail.readonly')
+            SCOPES.append('https://www.googleapis.com/auth/gmail.send')
+        elif service == 'drive.readonly':
+            SCOPES.append('https://www.googleapis.com/auth/drive.readonly')
+        elif service == 'groups':
+            SCOPES.append('https://www.googleapis.com/auth/cloud-identity.groups')
+        elif service == 'calendar':
+            SCOPES.append('https://www.googleapis.com/auth/calendar')
+        elif service == 'contacts':
+            SCOPES.append('https://www.googleapis.com/auth/contacts.readonly')
+            SCOPES.append('https://www.googleapis.com/auth/directory.readonly')
+        elif service == 'scripts':
+            SCOPES.append('https://www.googleapis.com/auth/script.projects')
+            SCOPES.append('https://www.googleapis.com/auth/script.external_request')
+            SCOPES.append('https://www.googleapis.com/auth/documents')
+
+    creds = Credentials.from_service_account_file(creds_file, scopes=SCOPES)
+    
+    service_dict = {}
+    for service in services:
+        try:
+            if service == 'sheets':
+                service_dict[service] = build('sheets', 'v4', credentials=creds)
+            elif service == 'drive':
+                service_dict[service] = build('drive', 'v3', credentials=creds)
+            elif service == 'docs':
+                service_dict[service] = build('docs', 'v1', credentials=creds)
+            elif service == 'gmail':
+                service_dict[service] = build('gmail', 'v1', credentials=creds)
+            elif service == 'drive.readonly':
+                service_dict[service] = build('drive.readonly', 'v3', credentials=creds)
+            elif service == 'script':
+                service_dict[service] = build('script', 'v1', credentials=creds)
+            elif service == 'slides':
+                service_dict[service] = build('slides', 'v1', credentials=creds)
+            elif service == 'groups':
+                service_dict[service] = build('cloudidentity', 'v1', credentials=creds)
+            elif service == 'calendar':
+                service_dict[service] = build('calendar', 'v3', credentials=creds)
+            elif service == 'contacts':
+                service_dict[service] = build('people', 'v1', credentials=creds)
+            elif service == 'scripts':
+                service_dict[service] = build('script', 'v1', credentials=creds)
+        except Exception as err:
+            service_dict[service] = 'Error: ' + str(err)
+    return service_dict
+
 
 #%% comprobarMailsDominios
 def comprobarMailsDominios (mails_destinatarios, dominios_aceptados):
@@ -593,12 +687,16 @@ def convertir_numero_a_fecha(dato, origen:Literal['GHSEETS', 'EXCEL']='GSHEETS')
     if pd.isna(dato):
         return None
 
-    if origen == 'GSHEETS':
-        origen = datetime(1899, 12, 30)
-    else:
-        origen = datetime(1900, 1, 1)
+    try:
+        if origen == 'GSHEETS':
+            origen = datetime(1899, 12, 30)
+        else:
+            origen = datetime(1900, 1, 1)
 
-    return origen + timedelta(days=dato)
+        return origen + timedelta(days=dato)
+    except:
+        print('Error al convertir la fecha:', dato)
+        return None
 
 #%% gshAjustarDimensionHoja
 def gshAjustarDimensionHoja(
@@ -5573,7 +5671,7 @@ def gdrGetFolderId(drive_service, folderPath, sharedDrive = False):
     return retobj
 
 #%% gdrListFiles
-def gdrListFiles(drive_service, folderId=None, folderPath=None, sharedDrive = False, trashed=False, fields='kind, id, name, mimeType'):
+def gdrListFiles(drive_service, folderId=None, folderPath=None, sharedDrive = True, trashed=False, fields='kind, id, name, mimeType'):
     """
     Lista los ficheros contenidos en una carpeta de drive.
     Parámetros:
@@ -5616,6 +5714,12 @@ def gdrListFiles(drive_service, folderId=None, folderPath=None, sharedDrive = Fa
     inicio = datetime.today()
     while True:
         try:
+            #Controlamos timeout
+            if (datetime.today() - inicio).seconds > 60:
+                print('Timeout listando ficheros de carpeta. Devuelve lo que tiene.')
+                break
+            inicio = datetime.today()
+
             respuesta = drive_service.files().list(q=q, fields=fields, supportsAllDrives=sharedDrive, includeItemsFromAllDrives=sharedDrive, pageToken=nextPageToken).execute()#['files']
             files = files + respuesta['files']
             if 'nextPageToken' in respuesta:
@@ -5623,12 +5727,11 @@ def gdrListFiles(drive_service, folderId=None, folderPath=None, sharedDrive = Fa
                 continue
             else:
                 break
-            #Controlamos timeout
-            if (datetime.today() - inicio).seconds > 60:
-                print('Timeout listando ficheros de carpeta. Devuelve lo que tiene.')
-                break
         except Exception as err:
-            print(respuesta, err)
+            import traceback
+            traceback.print_exc()
+            if 'respuesta' in globals():
+                print(respuesta)
             break
     return files
 
