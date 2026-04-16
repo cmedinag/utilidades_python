@@ -126,8 +126,9 @@ Funciones:
 """
 
 from __future__ import print_function
-__version__ = '20251020.0'
+__version__ = '20260416.0'
 __changelog__ = '''
+[2026-04-16] - Cambiamos la manera de comprobar un campo de fecha en pandas, a la hora de convertir columnas para subir a Google Sheets.
 [2025-10-20] - Se añade función connect_service_account y se controla mejor la caducidad del token en connect
 [2025-04-29] - Arreglado bug en control de errores de gdrListFiles
 [2025-04-10] - Reforzado control de errores en convertir_numero_a_fecha
@@ -754,13 +755,14 @@ def _dataframe_a_lista(
         list: lista de listas.
     """    
     from datetime import datetime
+    from pandas.api.types import is_datetime64_any_dtype
 
     copia = dataframe.copy()
     #2021-12-14: Puede haber varias columnas con el mismo nombre. En ese caso, el dtype fallaría porque no devolvería una serie, sino un df. Corregimos usando iloc.
     origen = datetime(1899, 12, 30)
     for col in copia.columns:
         if not conversion_exhaustiva_fechas:
-            if copia[col].dtype == 'datetime64[ns]':
+            if is_datetime64_any_dtype(copia[col]):
                 if formato_fecha == '#':
                     copia[col] = copia[col].apply(lambda x: (x-origen).total_seconds()/86400)
                 else:
@@ -1471,9 +1473,9 @@ def gshDescargarHoja(
     
         if margins:    
             params['top_margin']    = margins[0]
-            params['bottom_margin'] = margins[0]
-            params['left_margin']   = margins[0]
-            params['right_margin']  = margins[0]
+            params['bottom_margin'] = margins[1]
+            params['left_margin']   = margins[2]
+            params['right_margin']  = margins[3]
 
         if pagenum:
             params['pagenum'] = pagenum
